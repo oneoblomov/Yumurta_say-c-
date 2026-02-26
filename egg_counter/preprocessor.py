@@ -1,0 +1,198 @@
+"""
+preprocessor.py - Adaptif Ön İşleme Modülü
+============================================
+Endüstriyel ortam koşullarına dayanıklılık sağlar:
+  - CLAHE: Değişken ışık ve gölge kompanzasyonu
+  - Denoise: Toz ortamı gürültü azaltma
+  - Stabilizasyon: Kamera titreşim kompanzasyonu
+  - Adaptif parlaklık: Ani ışık değişimine uyum
+"""
+
+import cv2
+import numpy as np
+from collections import deque
+from typing import Optional
+
+from .config import PreprocessorConfig
+
+
+class FramePreprocessor:
+    """
+    Endüstriyel ortam için adaptif frame ön işleme.
+
+    Titreşim stabilizasyonu için optik akış tabanlı ECC alignment kullanılır.
+    Işık kompanzasyonu için CLAHE (Contrast Limited Adaptive Histogram Equalization).
+    """
+
+    def __init__(self, config: PreprocessorConfig):
+        self.cfg = config
+
+        # CLAHE nesnesi (bir kez oluştur, tekrar kullan)
+        if self.cfg.enable_clahe:
+            self._clahe = cv2.createCLAHE(
+                clipLimit=self.cfg.clahe_clip_limit,
+                tileGridSize=self.cfg.clahe_grid_size,
+            )
+
+        # Stabilizasyon için önceki frame'ler
+        if self.cfg.enable_stabilization:
+            self._prev_gray: Optional[np.ndarray] = None
+            self._transforms = deque(maxlen=self.cfg.stabilization_smoothing)
+
+        # Adaptif parlaklık geçmişi
+        if self.cfg.adaptive_brightness:
+            self._brightness_history = deque(maxlen=30)
+            self._target_brightness: Optional[float] = None
+
+    def process(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Frame'i endüstriyel koşullara karşı ön işlemden geçirir.
+
+        Args:
+            frame: BGR formatında ham frame
+
+        Returns:
+            İşlenmiş BGR frame
+        """
+        result = frame.copy()
+
+        # 1. Kamera titreşim stabilizasyonu
+        if self.cfg.enable_stabilization:
+            result = self._stabilize(result)
+
+        # 2. Adaptif parlaklık normalizasyonu
+        if self.cfg.adaptive_brightness:
+            result = self._normalize_brightness(result)
+
+        # 3. CLAHE - değişken ışık kompanzasyonu
+        if self.cfg.enable_clahe:
+            result = self._apply_clahe(result)
+
+        # 4. Gürültü azaltma (toz ortamları)
+        if self.cfg.enable_denoise:
+            result = self._denoise(result)
+
+        return result
+
+    def _apply_clahe(self, frame: np.ndarray) -> np.ndarray:
+        """LAB renk uzayında L kanalına CLAHE uygula."""
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        l_channel, a_channel, b_channel = cv2.split(lab)
+        l_channel = self._clahe.apply(l_channel)
+        lab = cv2.merge([l_channel, a_channel, b_channel])
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    def _denoise(self, frame: np.ndarray) -> np.ndarray:
+        """Hafif hızlı denoise (toz partikülleri için)."""
+        return cv2.fastNlMeansDenoisingColored(
+            frame, None,
+            h=self.cfg.denoise_strength,
+            hForColorComponents=self.cfg.denoise_strength,
+            templateWindowSize=7,
+            searchWindowSize=21,
+        )
+
+    def _stabilize(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Basit ECC tabanlı stabilizasyon.
+        Optik akış yerine feature matching ile daha hızlı.
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        if self._prev_gray is None:
+            self._prev_gray = gray
+            return frame
+
+        try:
+            # Feature matching ile transform hesapla
+            # ORB daha hızlı, endüstriyel ortam için yeterli
+            detector = cv2.ORB_create(nfeatures=200)
+            kp1, des1 = detector.detectAndCompute(self._prev_gray, None)
+            kp2, des2 = detector.detectAndCompute(gray, None)
+
+            if des1 is None or des2 is None or len(kp1) < 10 or len(kp2) < 10:
+                self._prev_gray = gray
+                return frame
+
+            bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+            matches = bf.match(des1, des2)
+
+            if len(matches) < 10:
+                self._prev_gray = gray
+                return frame
+
+            matches = sorted(matches, key=lambda x: x.distance)[:50]
+
+            pts1 = np.float32([kp1[m.queryIdx].pt for m in matches])
+            pts2 = np.float32([kp2[m.trainIdx].pt for m in matches])
+
+            # Rigid transform (rotation + translation)
+            M, _ = cv2.estimateAffinePartial2D(pts1, pts2, method=cv2.RANSAC)
+
+            if M is not None:
+                # Transform bileşenlerini çıkar
+                dx = M[0, 2]
+                dy = M[1, 2]
+                da = np.arctan2(M[1, 0], M[0, 0])
+                self._transforms.append((dx, dy, da))
+
+                # Yumuşatılmış kompanzasyonu hesapla
+                if len(self._transforms) >= 2:
+                    avg_dx = np.mean([t[0] for t in self._transforms])
+                    avg_dy = np.mean([t[1] for t in self._transforms])
+                    avg_da = np.mean([t[2] for t in self._transforms])
+
+                    # Sadece büyük titreşimleri kompanse et
+                    if abs(dx - avg_dx) > 1.5 or abs(dy - avg_dy) > 1.5:
+                        cos_a = np.cos(avg_da - da)
+                        sin_a = np.sin(avg_da - da)
+                        M_comp = np.float32([
+                            [cos_a, -sin_a, avg_dx - dx],
+                            [sin_a, cos_a, avg_dy - dy]
+                        ])
+                        h, w = frame.shape[:2]
+                        frame = cv2.warpAffine(frame, M_comp, (w, h),
+                                               borderMode=cv2.BORDER_REPLICATE)
+
+        except Exception:
+            pass  # Stabilizasyon başarısız olursa ham frame kullan
+
+        self._prev_gray = gray
+        return frame
+
+    def _normalize_brightness(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Ani ışık değişimlerine karşı adaptif parlaklık normalizasyonu.
+        Moving average ile hedef parlaklık belirlenir.
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        current_brightness = np.mean(gray)
+        self._brightness_history.append(current_brightness)
+
+        if self._target_brightness is None:
+            self._target_brightness = current_brightness
+            return frame
+
+        # Hedef parlaklığı yavaşça güncelle
+        avg_brightness = np.mean(self._brightness_history)
+        self._target_brightness = 0.95 * self._target_brightness + 0.05 * avg_brightness
+
+        # Sadece büyük sapmalar kompanse edilir (>%15)
+        ratio = self._target_brightness / max(current_brightness, 1.0)
+        if abs(ratio - 1.0) > 0.15:
+            # Hafif kompanzasyon uygula
+            compensated_ratio = 1.0 + (ratio - 1.0) * 0.5  # Agresif olmayan
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
+            hsv[:, :, 2] = np.clip(hsv[:, :, 2] * compensated_ratio, 0, 255)
+            frame = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+        return frame
+
+    def reset(self):
+        """Ön işlemci durumunu sıfırla."""
+        if self.cfg.enable_stabilization:
+            self._prev_gray = None
+            self._transforms.clear()
+        if self.cfg.adaptive_brightness:
+            self._brightness_history.clear()
+            self._target_brightness = None
