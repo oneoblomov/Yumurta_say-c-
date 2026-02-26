@@ -1,30 +1,21 @@
 #!/usr/bin/env python3
 """
-main.py - Yumurta Sayıcı Giriş Noktası
-=========================================
+main.py - Yumurta Sayıcı v2.0 - RPi5 Optimize
+=================================================
 Endüstriyel gerçek zamanlı yumurta sayma sistemi.
 
 Kullanım:
-    # Varsayılan kamera (0) ile çalıştır
-    python main.py
-
-    # Video dosyası ile çalıştır
-    python main.py --source video.mp4
-
-    # Özel model ile çalıştır
-    python main.py --model path/to/best.pt
-
-    # GPU seçimi
-    python main.py --device cuda:0
-
-    # Tam parametre listesi
-    python main.py --help
+    python main.py                              # Varsayılan kamera
+    python main.py --source video.mp4           # Video dosyası
+    python main.py --model best.pt --imgsz 480  # Özel model
+    python main.py --headless                   # Ekransız (RPi5 server)
+    python main.py --help                       # Tüm parametreler
 
 Kontrol tuşları:
     q / ESC  : Çıkış
     r        : Sayaç sıfırla
     d        : Debug modu aç/kapat
-    +/-      : Sayım çizgisini yukarı/aşağı kaydır
+    +/-      : Sayım çizgisini kaydır
     s        : Ekran görüntüsü kaydet
     f        : Tam ekran aç/kapat
     SPACE    : Durakla/Devam et
@@ -32,9 +23,16 @@ Kontrol tuşları:
 
 import argparse
 import sys
+import os
 from pathlib import Path
 
-# Proje kök dizinini path'e ekle
+# FFmpeg çok iş parçacıklı çözücüyü devre dışı bırak.
+# ThreadedCapture + FFmpeg dâhilî thread'leri çakışır:
+#   "Assertion fctx->async_lock failed at libavcodec/pthread_frame.c"
+# OPENCV_FFMPEG_CAPTURE_OPTIONS env var, cv2 import'undan ÖNCE ayarlanmalı.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "threads;1|fflags;nobuffer")
+os.environ.setdefault("OPENCV_FFMPEG_MULTITHREADED", "0")  # eski OpenCV versiyonları için
+
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
@@ -43,46 +41,40 @@ from egg_counter.pipeline import EggCountingPipeline
 
 
 def parse_args():
-    """Komut satırı argümanlarını ayrıştır."""
     parser = argparse.ArgumentParser(
-        description="Yumurta Sayıcı - Endüstriyel Gerçek Zamanlı Sayım Sistemi",
+        description="Yumurta Sayıcı v2.0 - RPi5 Optimize Endüstriyel Sayım",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Örnekler:
-  python main.py                            # Varsayılan kamera
-  python main.py --source 1                 # İkinci kamera
-  python main.py --source video.mp4         # Video dosyası
-  python main.py --conf 0.5 --debug         # Yüksek güven + debug
-  python main.py --save-output out.mp4      # Çıktı kaydet
+  python main.py                                # Varsayılan kamera (640x480)
+  python main.py --source video.mp4             # Video dosyası
+  python main.py --conf 0.25 --debug            # Düşük güven + debug
+  python main.py --imgsz 320                    # Hızlı mod (düşük çözünürlük)
+  python main.py --headless --save-output o.mp4 # Ekransız kayıt
+  python main.py --no-threaded                  # Thread'siz kamera
         """
     )
 
     # Video kaynağı
-    parser.add_argument(
-        "--source", type=str, default="0",
-        help="Video kaynağı: kamera indeksi (0,1,..) veya dosya yolu (default: 0)"
-    )
+    parser.add_argument("--source", type=str, default="0",
+                        help="Kamera indeksi veya video dosya yolu (default: 0)")
 
     # Model
-    parser.add_argument(
-        "--model", type=str,
-        default="runs/detect/runs/train/egg_count/weights/best.pt",
-        help="YOLO model yolu"
-    )
+    parser.add_argument("--model", type=str,
+                        default="models/yolo26s_mod/best.pt",
+                        help="YOLO model yolu (.pt, .onnx, .ncnn)")
 
     # Algılama
-    parser.add_argument("--conf", type=float, default=0.45,
-                        help="Güven eşiği (default: 0.45)")
-    parser.add_argument("--iou", type=float, default=0.5,
-                        help="NMS IoU eşiği (default: 0.5)")
-    parser.add_argument("--imgsz", type=int, default=640,
-                        help="Inference boyutu (default: 640)")
+    parser.add_argument("--conf", type=float, default=0.30,
+                        help="Güven eşiği (default: 0.30 - yüksek recall)")
+    parser.add_argument("--iou", type=float, default=0.45,
+                        help="NMS IoU eşiği (default: 0.45)")
+    parser.add_argument("--imgsz", type=int, default=480,
+                        help="Inference boyutu (default: 480, RPi5 dengeli)")
 
     # Cihaz
     parser.add_argument("--device", type=str, default="",
                         help="Cihaz: cuda:0, cpu (default: auto)")
-    parser.add_argument("--no-half", action="store_true",
-                        help="FP16 devre dışı bırak (FP32 kullan)")
 
     # Sayım çizgisi
     parser.add_argument("--line-pos", type=float, default=0.5,
@@ -92,29 +84,39 @@ def parse_args():
                         help="Sayım yönü (default: top_to_bottom)")
 
     # Kamera
-    parser.add_argument("--width", type=int, default=1280,
-                        help="Kamera genişliği (default: 1280)")
-    parser.add_argument("--height", type=int, default=720,
-                        help="Kamera yüksekliği (default: 720)")
+    parser.add_argument("--width", type=int, default=640,
+                        help="Kamera genişliği (default: 640)")
+    parser.add_argument("--height", type=int, default=480,
+                        help="Kamera yüksekliği (default: 480)")
 
     # Performans
     parser.add_argument("--skip-frames", type=int, default=0,
-                        help="Frame atlama (0=yok, 1=her 2.de, default: 0)")
+                        help="Frame atlama (default: 0)")
     parser.add_argument("--tracker", type=str, default="bytetrack",
                         choices=["bytetrack", "botsort"],
                         help="Tracker tipi (default: bytetrack)")
+    parser.add_argument("--no-threaded", action="store_true",
+                        help="Thread'li kamera yakalamayı kapat")
+
+    # Tracker hassasiyeti
+    parser.add_argument("--track-buffer", type=int, default=90,
+                        help="Kayıp ID buffer (frame) (default: 90)")
+    parser.add_argument("--match-thresh", type=float, default=0.85,
+                        help="Tracker IoU eşleştirme eşiği (default: 0.85)")
 
     # Ön işleme
     parser.add_argument("--no-clahe", action="store_true",
                         help="CLAHE ön işleme devre dışı")
-    parser.add_argument("--no-stabilize", action="store_true",
-                        help="Titreşim stabilizasyonu devre dışı")
+    parser.add_argument("--stabilize", action="store_true",
+                        help="Titreşim stabilizasyonu AÇ (RPi5'te varsayılan kapalı)")
 
     # Çıktı
     parser.add_argument("--save-output", type=str, default="",
-                        help="Çıktı video yolu (boş = kaydetme)")
+                        help="Çıktı video yolu")
     parser.add_argument("--fullscreen", action="store_true",
                         help="Tam ekran başlat")
+    parser.add_argument("--headless", action="store_true",
+                        help="Ekransız çalışma (RPi5 server modu)")
 
     # Debug
     parser.add_argument("--debug", action="store_true",
@@ -126,7 +128,6 @@ def parse_args():
 
 
 def build_config(args) -> SystemConfig:
-    """Argümanlardan SystemConfig oluştur."""
     config = SystemConfig()
 
     # Detector
@@ -134,12 +135,13 @@ def build_config(args) -> SystemConfig:
     config.detector.conf_threshold = args.conf
     config.detector.iou_threshold = args.iou
     config.detector.imgsz = args.imgsz
-    config.detector.device = args.device
-    if args.no_half:
-        config.detector.half = False
+    if args.device:
+        config.detector.device = args.device
 
     # Tracker
     config.tracker.tracker_type = args.tracker
+    config.tracker.track_buffer = args.track_buffer
+    config.tracker.match_thresh = args.match_thresh
 
     # Counter
     config.counter.line_position = args.line_pos
@@ -147,7 +149,7 @@ def build_config(args) -> SystemConfig:
 
     # Preprocessor
     config.preprocessor.enable_clahe = not args.no_clahe
-    config.preprocessor.enable_stabilization = not args.no_stabilize
+    config.preprocessor.enable_stabilization = args.stabilize  # Varsayılan KAPALI
 
     # Pipeline
     config.pipeline.source = args.source
@@ -157,6 +159,8 @@ def build_config(args) -> SystemConfig:
     config.pipeline.debug_mode = args.debug
     config.pipeline.show_track_trail = not args.no_trail
     config.pipeline.fullscreen = args.fullscreen
+    config.pipeline.headless = args.headless
+    config.pipeline.use_threaded_capture = not args.no_threaded
 
     if args.save_output:
         config.pipeline.save_output = True
@@ -166,25 +170,30 @@ def build_config(args) -> SystemConfig:
 
 
 def main():
-    """Ana giriş noktası."""
     args = parse_args()
     config = build_config(args)
 
-    # Sistem bilgisi
     print(f"\n{'='*60}")
-    print(f"  Model    : {config.detector.model_path}")
-    print(f"  Kaynak   : {config.pipeline.source}")
-    print(f"  Cihaz    : {config.detector.device}")
-    print(f"  ImgSz    : {config.detector.imgsz}")
-    print(f"  Conf     : {config.detector.conf_threshold}")
-    print(f"  Tracker  : {config.tracker.tracker_type}")
-    print(f"  Çizgi    : {config.counter.line_position:.0%}")
-    print(f"  Yön      : {config.counter.direction}")
-    print(f"  CLAHE    : {'Açık' if config.preprocessor.enable_clahe else 'Kapalı'}")
-    print(f"  Stabil.  : {'Açık' if config.preprocessor.enable_stabilization else 'Kapalı'}")
+    print(f"  YUMURTA SAYICI v2.0 - RPi5 Optimize")
+    print(f"{'='*60}")
+    print(f"  Model      : {config.detector.model_path}")
+    print(f"  Kaynak     : {config.pipeline.source}")
+    print(f"  Cihaz      : {config.detector.device}")
+    print(f"  ImgSz      : {config.detector.imgsz}")
+    print(f"  Conf       : {config.detector.conf_threshold}")
+    print(f"  IoU        : {config.detector.iou_threshold}")
+    print(f"  Tracker    : {config.tracker.tracker_type}")
+    print(f"  TrackBuf   : {config.tracker.track_buffer} frame")
+    print(f"  MatchThr   : {config.tracker.match_thresh}")
+    print(f"  Çizgi      : {config.counter.line_position:.0%}")
+    print(f"  Yön        : {config.counter.direction}")
+    print(f"  Kamera     : {config.pipeline.camera_width}x{config.pipeline.camera_height}")
+    print(f"  CLAHE      : {'Açık' if config.preprocessor.enable_clahe else 'Kapalı'}")
+    print(f"  Stabil.    : {'Açık' if config.preprocessor.enable_stabilization else 'Kapalı'}")
+    print(f"  Threaded   : {'Açık' if config.pipeline.use_threaded_capture else 'Kapalı'}")
+    print(f"  Headless   : {'Açık' if config.pipeline.headless else 'Kapalı'}")
     print(f"{'='*60}\n")
 
-    # Pipeline oluştur ve çalıştır
     pipeline = EggCountingPipeline(config)
     pipeline.run()
 

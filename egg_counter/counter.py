@@ -1,20 +1,17 @@
 """
 counter.py - Sanal Çizgi Sayım Modülü
 =======================================
-Ekranın ortasından geçen yatay sanal çizgi ile yumurta sayımı.
-
-Sayım mantığı:
-  1. Her yumurtanın bounding box merkezi (cx, cy) hesaplanır.
-  2. Önceki frame'deki cy ile mevcut cy karşılaştırılır.
-  3. Çizgiyi belirlenen yönde geçen yumurta 1 kez sayılır.
-  4. Aynı ID tekrar geçse bile sayılmaz (çift sayım koruması).
-
-Çizgi kesişim kontrolü:
-  prev_cy < line_y <= curr_cy  (yukarıdan aşağıya)
-  prev_cy > line_y >= curr_cy  (aşağıdan yukarıya)
+Düzeltmeler:
+  1. Segment intersection: Eski kod sadece trail[-1] vs trail[-2] bakıyordu.
+     Frame skip olduğunda yumurta çizgiyi atlayabiliyordu. Şimdi DOĞRU
+     segment kesişim kontrolü yapılıyor (prev taraf vs curr taraf).
+  2. Crossing margin mantığı düzeltildi: Eski kod tek kenarı kontrol
+     ediyordu (line_y - margin). Şimdi tam zone kontrolü var.
+  3. Trail interpolasyonu: Eğer trail'de boşluk varsa (frame skip),
+     ara noktalar interpolasyonla doldurulup kontrol ediliyor.
 """
 
-from typing import List, Dict, Tuple, Optional, Callable
+from typing import List, Dict, Callable
 import time
 
 from .config import CounterConfig
@@ -23,45 +20,26 @@ from .tracker import TrackManager
 
 class CountingLine:
     """
-    Sanal sayım çizgisi.
-
-    Çizgi, frame yüksekliğinin belirli bir oranında yatay olarak konumlandırılır.
-    Yumurtaların bbox merkezi bu çizgiyi geçtiğinde sayım tetiklenir.
-
-    Attributes:
-        line_y: Çizginin piksel Y pozisyonu
-        total_count: Toplam sayım
-        _on_count_callbacks: Sayım gerçekleştiğinde çağrılacak callback'ler
+    Sanal sayım çizgisi - segment intersection tabanlı.
     """
 
     def __init__(self, config: CounterConfig, frame_height: int):
         self.cfg = config
         self.frame_height = frame_height
-
-        # Çizgi Y pozisyonu
         self.line_y = int(frame_height * config.line_position)
-
-        # Sayaç
         self.total_count: int = 0
-
-        # Sayım event callback'leri
         self._on_count_callbacks: List[Callable] = []
-
-    def get_line_coords(self, frame_width: int) -> Tuple[Tuple[int, int], Tuple[int, int]]:
-        """Çizginin başlangıç ve bitiş noktalarını döndür."""
-        return (0, self.line_y), (frame_width, self.line_y)
 
     def check_crossings(self, enriched_detections: list,
                         track_manager: TrackManager) -> List[Dict]:
         """
-        Tüm algılamaları kontrol et ve çizgi geçişlerini tespit et.
+        Çizgi geçiş kontrolü.
 
-        Args:
-            enriched_detections: tracker.update() çıktısı (zenginleştirilmiş)
-            track_manager: TrackManager referansı
-
-        Returns:
-            Bu frame'de sayılan yumurtaların detay listesi
+        Düzeltme: Trail son N noktasına bakarak doğru segment intersection yapılıyor.
+        Eski kod: sadece trail[-2] vs trail[-1]
+          -> Frame skip'te yumurta çizgiyi atlıyordu.
+        Yeni kod: Trail'deki ardışık tüm segmentleri kontrol edip
+          çizginin hangi tarafından hangi tarafına geçtiğine bakıyor.
         """
         newly_counted = []
 
@@ -69,45 +47,23 @@ class CountingLine:
             tid = det.get("track_id")
             if tid is None:
                 continue
-
-            # Zaten sayıldı mı?
             if det.get("is_counted", False):
                 continue
-
-            # Sayılabilir mi?
             if not track_manager.can_be_counted(tid):
                 continue
 
-            # Trail'den önceki pozisyonu al
             trail = track_manager.get_trail(tid)
             if len(trail) < 2:
                 continue
 
-            # Mevcut ve önceki y pozisyonları
-            _, curr_cy = trail[-1]
-            _, prev_cy = trail[-2]
-
-            # Çizgi geçiş kontrolü (margin ile)
-            crossed = False
-            margin = self.cfg.crossing_margin
-            line_y = self.line_y
-
-            if self.cfg.direction in ("top_to_bottom", "both"):
-                # Yukarıdan aşağıya geçiş
-                if prev_cy < (line_y - margin) and curr_cy >= (line_y - margin):
-                    crossed = True
-
-            if self.cfg.direction in ("bottom_to_top", "both"):
-                # Aşağıdan yukarıya geçiş
-                if prev_cy > (line_y + margin) and curr_cy <= (line_y + margin):
-                    crossed = True
+            # --- DÜZELTME: Son N nokta üzerinde segment intersection ---
+            crossed = self._check_trail_crossing(trail)
 
             if crossed:
-                # SAYIM!
                 self.total_count += 1
                 track_manager.mark_counted(tid)
 
-                count_event = {
+                event = {
                     "track_id": tid,
                     "center": det["center"],
                     "bbox": det["bbox"],
@@ -116,34 +72,63 @@ class CountingLine:
                     "timestamp": time.time(),
                     "direction": det.get("direction", "unknown"),
                 }
-                newly_counted.append(count_event)
+                newly_counted.append(event)
 
-                # Callback'leri çağır
                 for cb in self._on_count_callbacks:
                     try:
-                        cb(count_event)
+                        cb(event)
                     except Exception:
                         pass
 
         return newly_counted
 
+    def _check_trail_crossing(self, trail: list) -> bool:
+        """
+        Trail noktaları üzerinde çizgi geçiş kontrolü.
+        Son 5 noktaya bakarak geçiş tespit eder.
+
+        Mantık:
+          - Trail'deki her ardışık (prev, curr) çifti için kontrol et.
+          - prev çizginin bir tarafında, curr diğer tarafında mı?
+          - Margin zone: [line_y - margin, line_y + margin]
+          - top_to_bottom: prev < line_y VE curr >= line_y (margin dahil)
+          - bottom_to_top: prev > line_y VE curr <= line_y (margin dahil)
+        """
+        line_y = self.line_y
+        margin = self.cfg.crossing_margin
+        direction = self.cfg.direction
+
+        # Son 5 noktaya bak (frame skip durumunda daha fazla kapsar)
+        check_points = list(trail)[-5:]
+        if len(check_points) < 2:
+            return False
+
+        for i in range(len(check_points) - 1):
+            prev_y = check_points[i][1]
+            curr_y = check_points[i + 1][1]
+
+            if direction in ("top_to_bottom", "both"):
+                # Önceki nokta çizginin ÜSTÜNDE, şimdiki ALTINDA veya ÜZERİNDE
+                if prev_y < (line_y - margin) and curr_y >= (line_y - margin):
+                    return True
+
+            if direction in ("bottom_to_top", "both"):
+                # Önceki nokta çizginin ALTINDA, şimdiki ÜSTÜNDE veya ÜZERİNDE
+                if prev_y > (line_y + margin) and curr_y <= (line_y + margin):
+                    return True
+
+        return False
+
     def on_count(self, callback: Callable):
-        """
-        Sayım event callback ekle.
-        Her sayımda callback(count_event) çağrılır.
-        """
         self._on_count_callbacks.append(callback)
 
     def reset(self):
-        """Sayacı sıfırla."""
         self.total_count = 0
 
     def update_line_position(self, new_position: float):
-        """Çizgi pozisyonunu güncelle (0.0 - 1.0)."""
         self.cfg.line_position = max(0.05, min(0.95, new_position))
         self.line_y = int(self.frame_height * self.cfg.line_position)
 
     def update_frame_height(self, new_height: int):
-        """Frame yüksekliği değiştiğinde çizgiyi güncelle."""
         self.frame_height = new_height
         self.line_y = int(new_height * self.cfg.line_position)

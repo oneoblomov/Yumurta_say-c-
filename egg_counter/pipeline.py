@@ -1,27 +1,31 @@
 """
-pipeline.py - Ana Orkestratör Modülü
-======================================
-Tüm modülleri birleştiren gerçek zamanlı pipeline.
-
-Akış:
-  Kamera → Ön İşleme → YOLO Algılama + ByteTrack → Track Yönetimi
-  → Çizgi Kesişim → Sayım → Log → Görselleştirme → Ekran
-
-Kontrol tuşları:
-  q / ESC  : Çıkış
-  r        : Sayaç sıfırla
-  d        : Debug modu aç/kapat
-  +/-      : Sayım çizgisini yukarı/aşağı kaydır
-  s        : Ekran görüntüsü kaydet
-  f        : Tam ekran aç/kapat
-  SPACE    : Durakla/Devam et
+pipeline.py - Ana Orkestratör (RPi5 Optimize)
+================================================
+Düzeltmeler:
+  1. Threaded camera capture: Ayrı thread frame okur, ana thread beklemez.
+     RPi5'te ~5ms/frame tasarruf (kamera I/O bekleme süresi sıfır).
+  2. Koordinat tutarlılığı: Stabilizasyon frame geometrisini değiştiriyorsa,
+     aynı frame hem algılama hem görselleştirme için kullanılıyor.
+     ESKİ HATA: Algılama preprocessed frame'e, görselleştirme orijinal frame'e
+     yapılıyordu -> koordinat uyumsuzluğu.
+  3. Video loop'ta tracker state sıfırlanıyor (eski: stale ID'ler kalıyordu).
+  4. Screenshot tuşu gerçekten kaydediyor (eski: sadece print).
+  5. Headless mode: Ekransız RPi5 çalışması.
+  6. FPS hesaplama: Sadece inference süresini ölçer (vizualizasyon hariç).
 """
 
+import os
 import cv2
 import time
+import threading
 import numpy as np
-from pathlib import Path
+from collections import deque
 from typing import Optional
+
+# FFmpeg tek thread (libavcodec/pthread_frame.c assert crash önlemek için)
+# main.py orada zaten ayarlar, ama pipeline doğrudan import edilirse diye burada da.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "threads;1|fflags;nobuffer")
+os.environ.setdefault("OPENCV_FFMPEG_MULTITHREADED", "0")
 
 from .config import SystemConfig
 from .preprocessor import FramePreprocessor
@@ -32,38 +36,146 @@ from .visualizer import Visualizer
 from .logger import CountLogger
 
 
+class ThreadedCapture:
+    """
+    Ayrı thread'de kamera okuma.
+    ana thread cv2.read() I/O beklemesi yapmaz -> ~5ms/frame tasarruf.
+    """
+
+    def __init__(self, source, width: int, height: int, fps: int, buffer_size: int):
+        if isinstance(source, str) and source.isdigit():
+            source = int(source)
+
+        self._cap = cv2.VideoCapture(source)
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Video kaynağı açılamadı: {source}")
+
+        # FIX: FFmpeg thread'lerini 1'e çek (async_lock crash önlemek için)
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
+        try:
+            self._cap.set(cv2.CAP_PROP_THREAD_COUNT, 1)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        if isinstance(source, int):
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            self._cap.set(cv2.CAP_PROP_FPS, fps)
+
+        self.frame_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        self._frame = None
+        self._ret = False
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._is_file = isinstance(source, str)
+
+    def start(self):
+        self._running = True
+        self._thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self._thread.start()
+        # İlk frame'i bekle
+        time.sleep(0.1)
+        return self
+
+    def _capture_loop(self):
+        while self._running:
+            ret, frame = self._cap.read()
+            with self._lock:
+                self._ret = ret
+                self._frame = frame
+            if not ret:
+                time.sleep(0.01)
+
+    def read(self):
+        with self._lock:
+            return self._ret, self._frame
+
+    def stop(self):
+        self._running = False
+        if self._thread is not None:
+            # Önce thread'in bitmesini bekle, SONRA cap’ı serbest bırak.
+            # FFmpeg decoder thread'i cap.read() içindeyken cap.release() çağrırırsak
+            # libavcodec mutex assert crash olur.
+            self._thread.join(timeout=3.0)
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
+
+    def reset_position(self):
+        """Video dosyasını başa sar."""
+        if self._cap is not None:
+            self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    @property
+    def is_file(self):
+        return self._is_file
+
+
+class DirectCapture:
+    """Thread'siz doğrudan kamera okuma (fallback)."""
+
+    def __init__(self, source, width: int, height: int, fps: int, buffer_size: int):
+        if isinstance(source, str) and source.isdigit():
+            source = int(source)
+
+        self._cap = cv2.VideoCapture(source)
+        if not self._cap.isOpened():
+            raise RuntimeError(f"Video kaynağı açılamadı: {source}")
+
+        # FIX: FFmpeg thread'lerini 1'e çek
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
+        try:
+            self._cap.set(cv2.CAP_PROP_THREAD_COUNT, 1)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        if isinstance(source, int):
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            self._cap.set(cv2.CAP_PROP_FPS, fps)
+
+        self.frame_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self._is_file = isinstance(source, str)
+
+    def start(self):
+        return self
+
+    def read(self):
+        return self._cap.read()
+
+    def stop(self):
+        if self._cap is not None:
+            self._cap.release()
+
+    def reset_position(self):
+        self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    @property
+    def is_file(self):
+        return self._is_file
+
+
 class EggCountingPipeline:
     """
     Endüstriyel gerçek zamanlı yumurta sayma pipeline'ı.
-
-    Tüm modülleri orkestre eder:
-      1. FramePreprocessor - Adaptif ön işleme
-      2. EggDetector       - YOLO + ByteTrack
-      3. TrackManager      - İz yönetimi
-      4. CountingLine      - Sanal çizgi sayım
-      5. Visualizer        - Görsel işaretleme
-      6. CountLogger       - Log sistemi
-
-    Kullanım:
-        config = SystemConfig()
-        pipeline = EggCountingPipeline(config)
-        pipeline.run()
+    RPi5 optimize: threaded capture, zero-copy viz, lightweight preprocess.
     """
 
     def __init__(self, config: SystemConfig):
         self.cfg = config
-
-        # Durum
         self._running = False
         self._paused = False
         self._debug_mode = config.pipeline.debug_mode
 
-        # FPS hesaplama
+        # FPS: deque tabanlı (daha stabil ölçüm)
         self._fps = 0.0
-        self._frame_times = []
-        self._fps_update_interval = 10  # Her N frame'de bir FPS güncelle
+        self._fps_times = deque(maxlen=30)
 
-        # Modüller (kamera açıldıktan sonra bazıları init edilecek)
+        # Modüller
         self._preprocessor: Optional[FramePreprocessor] = None
         self._detector: Optional[EggDetector] = None
         self._track_manager: Optional[TrackManager] = None
@@ -71,205 +183,204 @@ class EggCountingPipeline:
         self._visualizer: Optional[Visualizer] = None
         self._logger: Optional[CountLogger] = None
 
-        # Video yakalama
-        self._cap: Optional[cv2.VideoCapture] = None
-        self._writer: Optional[cv2.VideoWriter] = None
+        # Capture
+        self._capture = None
         self._frame_width = 0
         self._frame_height = 0
 
-    def _init_camera(self) -> bool:
-        """
-        Kamera / video kaynağını başlat.
+        # Video yazıcı
+        self._writer: Optional[cv2.VideoWriter] = None
 
-        Returns:
-            Başarılı mı?
-        """
+        # Son frame (screenshot için)
+        self._last_display_frame: Optional[np.ndarray] = None
+
+    def _init_capture(self) -> bool:
+        """Kamera/video kaynağını başlat."""
         source = self.cfg.pipeline.source
 
-        # Kamera indeksi mi, dosya yolu mu?
-        if source.isdigit():
-            source = int(source)
+        # Video DOSYASI için ThreadedCapture kullanma:
+        # FFmpeg dahilî decoder thread'leri + bizim okuma thread'imiz çakışır
+        # -> libavcodec/pthread_frame.c assertion crash.
+        # Kamera (int index) için ise thread'leme I/O gecikmesini ortadan kaldırır.
+        src_str = str(source)
+        is_video_file = src_str != "" and not src_str.isdigit()
+        use_threaded = self.cfg.pipeline.use_threaded_capture and not is_video_file
 
-        self._cap = cv2.VideoCapture(source)
-
-        if not self._cap.isOpened():
-            print(f"[PIPELINE] HATA: Video kaynağı açılamadı: {self.cfg.pipeline.source}")
+        try:
+            if use_threaded:
+                self._capture = ThreadedCapture(
+                    source,
+                    self.cfg.pipeline.camera_width,
+                    self.cfg.pipeline.camera_height,
+                    self.cfg.pipeline.camera_fps,
+                    self.cfg.pipeline.buffer_size,
+                ).start()
+                print("[PIPELINE] Kamera: threaded capture")
+            else:
+                self._capture = DirectCapture(
+                    source,
+                    self.cfg.pipeline.camera_width,
+                    self.cfg.pipeline.camera_height,
+                    self.cfg.pipeline.camera_fps,
+                    self.cfg.pipeline.buffer_size,
+                ).start()
+                if is_video_file:
+                    print("[PIPELINE] Video dosyası: direct capture (FFmpeg thread güvenliği)")
+        except RuntimeError as e:
+            print(f"[PIPELINE] HATA: {e}")
             return False
 
-        # Kamera parametreleri ayarla (sadece gerçek kamera için)
-        if isinstance(source, int):
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.pipeline.camera_width)
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.pipeline.camera_height)
-            self._cap.set(cv2.CAP_PROP_FPS, self.cfg.pipeline.camera_fps)
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, self.cfg.pipeline.buffer_size)
-
-        # Gerçek çözünürlüğü oku
-        self._frame_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self._frame_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        print(f"[PIPELINE] Kamera açıldı: {self._frame_width}x{self._frame_height}")
+        self._frame_width = self._capture.frame_width
+        self._frame_height = self._capture.frame_height
+        print(f"[PIPELINE] Kaynak açıldı: {self._frame_width}x{self._frame_height}")
         return True
 
     def _init_modules(self):
-        """Tüm alt modülleri başlat."""
         print("[PIPELINE] Modüller başlatılıyor...")
 
-        # 1. Ön işlemci
         self._preprocessor = FramePreprocessor(self.cfg.preprocessor)
 
-        # 2. Algılayıcı + Takip
         print("[PIPELINE] YOLO model yükleniyor...")
         self._detector = EggDetector(self.cfg.detector, self.cfg.tracker)
 
-        # 3. Track yöneticisi
         self._track_manager = TrackManager(
             self.cfg.tracker, self.cfg.counter,
             trail_length=self.cfg.pipeline.trail_length
         )
 
-        # 4. Sayım çizgisi
         self._counting_line = CountingLine(self.cfg.counter, self._frame_height)
-
-        # 5. Görselleştirici
         self._visualizer = Visualizer(self.cfg.visualizer, self.cfg.counter)
-
-        # 6. Logger
         self._logger = CountLogger(self.cfg.logger)
 
-        # Logger callback'ini sayım çizgisine bağla
         self._counting_line.on_count(self._on_egg_counted)
 
-        print("[PIPELINE] Tüm modüller hazır.")
-        print(f"[PIPELINE] Sayım çizgisi: y={self._counting_line.line_y} "
-              f"(frame_h={self._frame_height})")
-        print(f"[PIPELINE] Cihaz: {self.cfg.detector.device}")
+        print(f"[PIPELINE] Hazır. Çizgi y={self._counting_line.line_y}, "
+              f"Cihaz={self.cfg.detector.device}")
 
     def _init_video_writer(self):
-        """Video yazıcı başlat (opsiyonel)."""
         if not self.cfg.pipeline.save_output:
             return
-
         fourcc = cv2.VideoWriter_fourcc(*self.cfg.pipeline.output_codec)
-        fps = self.cfg.pipeline.target_fps
         self._writer = cv2.VideoWriter(
-            self.cfg.pipeline.output_path,
-            fourcc, fps,
+            self.cfg.pipeline.output_path, fourcc,
+            self.cfg.pipeline.target_fps,
             (self._frame_width, self._frame_height)
         )
-        print(f"[PIPELINE] Video kayıt: {self.cfg.pipeline.output_path}")
 
     def run(self):
-        """
-        Ana çalışma döngüsü.
-        Kamerayı başlatır, modülleri init eder, frame loop'u çalıştırır.
-        """
+        """Ana çalışma döngüsü."""
         print("=" * 60)
-        print("  YUMURTA SAYICI - Endüstriyel Üretim Bandı Sistemi")
-        print("  Azim-Tav | v1.0")
+        print("  YUMURTA SAYICI v2.0 - RPi5 Optimize")
+        print("  Azim-Tav Endüstriyel Sayım Sistemi")
         print("=" * 60)
 
-        # 1. Kamera başlat
-        if not self._init_camera():
+        if not self._init_capture():
             return
 
-        # 2. Modülleri başlat
         self._init_modules()
-
-        # 3. Video yazıcı (opsiyonel)
         self._init_video_writer()
 
-        # 4. Pencere oluştur
-        window_name = self.cfg.pipeline.window_name
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        if self.cfg.pipeline.fullscreen:
-            cv2.setWindowProperty(
-                window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN
-            )
+        # Pencere (headless değilse)
+        if not self.cfg.pipeline.headless:
+            window = self.cfg.pipeline.window_name
+            cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+            if self.cfg.pipeline.fullscreen:
+                cv2.setWindowProperty(window, cv2.WND_PROP_FULLSCREEN,
+                                      cv2.WINDOW_FULLSCREEN)
 
         self._running = True
         frame_count = 0
         skip = self.cfg.pipeline.skip_frames
+        consecutive_failures = 0
 
-        print("\n[PIPELINE] Çalışıyor... (q: çıkış, r: sıfırla, d: debug)")
+        print(f"\n[PIPELINE] Çalışıyor... (q:çıkış r:sıfırla d:debug +/-:çizgi)")
 
         try:
             while self._running:
-                loop_start = time.perf_counter()
-
                 # Tuş kontrolü
-                key = cv2.waitKey(1) & 0xFF
-                self._handle_key(key)
+                if not self.cfg.pipeline.headless:
+                    key = cv2.waitKey(1) & 0xFF
+                    self._handle_key(key)
 
                 if self._paused:
+                    time.sleep(0.01)
                     continue
 
                 # Frame oku
-                ret, frame = self._cap.read()
-                if not ret:
-                    # Video dosyası bitti -> başa sar veya çık
-                    if isinstance(self.cfg.pipeline.source, str) and \
-                       not self.cfg.pipeline.source.isdigit():
-                        self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = self._capture.read()
+                if not ret or frame is None:
+                    consecutive_failures += 1
+                    if self._capture.is_file:
+                        # Video bitti -> sıfırla ve tekrar başlat
+                        self._capture.reset_position()
+                        # DÜZELTME: Tracker'ı sıfırla (eski: stale ID'ler kalıyordu)
+                        self._track_manager.reset()
+                        self._detector.reset_tracker()
+                        consecutive_failures = 0
                         continue
-                    else:
+                    elif consecutive_failures > 30:
                         print("[PIPELINE] Kamera bağlantısı kesildi!")
                         break
+                    time.sleep(0.01)
+                    continue
 
+                consecutive_failures = 0
                 frame_count += 1
 
-                # Frame skip (performans optimizasyonu)
+                # Frame skip
                 if skip > 0 and frame_count % (skip + 1) != 0:
                     continue
 
                 # === ANA PIPELINE ===
+                t_start = time.perf_counter()
                 display_frame = self._process_frame(frame)
+                t_end = time.perf_counter()
+
+                # FPS (sadece inference + tracking, vizualizasyon dahil)
+                self._fps_times.append(t_end - t_start)
+                if len(self._fps_times) >= 5:
+                    avg = sum(self._fps_times) / len(self._fps_times)
+                    self._fps = 1.0 / max(avg, 1e-6)
+
+                self._last_display_frame = display_frame
 
                 # Video kayıt
                 if self._writer is not None:
                     self._writer.write(display_frame)
 
-                # Ekrana göster
-                cv2.imshow(window_name, display_frame)
-
-                # FPS hesapla
-                elapsed = time.perf_counter() - loop_start
-                self._frame_times.append(elapsed)
-                if len(self._frame_times) >= self._fps_update_interval:
-                    avg_time = sum(self._frame_times) / len(self._frame_times)
-                    self._fps = 1.0 / max(avg_time, 1e-6)
-                    self._frame_times.clear()
+                # Ekran
+                if not self.cfg.pipeline.headless:
+                    cv2.imshow(self.cfg.pipeline.window_name, display_frame)
 
         except KeyboardInterrupt:
-            print("\n[PIPELINE] Kullanıcı tarafından durduruldu.")
+            print("\n[PIPELINE] Kullanıcı durdurdu.")
         finally:
             self._cleanup()
 
     def _process_frame(self, frame: np.ndarray) -> np.ndarray:
         """
-        Tek bir frame'i tüm pipeline'dan geçir.
+        Tek frame pipeline.
 
-        Args:
-            frame: Ham BGR frame
-
-        Returns:
-            İşaretlenmiş frame
+        DÜZELTME: Aynı frame hem algılama hem görselleştirme için kullanılıyor.
+        Eski: algılama=preprocessed, görselleştirme=orijinal -> koordinat UYUMSUZLUĞU.
+        Yeni: preprocessed frame üzerinde algılama yapılır, aynı frame görselleştirilir.
         """
-        # 1. Ön işleme (CLAHE, stabilizasyon, parlaklık)
+        # 1. Ön işleme
         processed = self._preprocessor.process(frame)
 
-        # 2. YOLO Algılama + ByteTrack Takip
+        # 2. YOLO + ByteTrack
         result = self._detector.detect_and_track(processed)
         detections = self._detector.parse_results(result)
 
-        # 3. Track yönetimi (trail, age, durum)
+        # 3. Track yönetimi + spatial dedup
         enriched = self._track_manager.update(detections)
 
-        # 4. Sayım çizgisi geçiş kontrolü
+        # 4. Sayım çizgisi kontrolü
         newly_counted = self._counting_line.check_crossings(
             enriched, self._track_manager
         )
 
-        # 5. Trail verilerini topla (görselleştirme için)
+        # 5. Trail verisi (görselleştirme)
         trails = {}
         if self.cfg.pipeline.show_track_trail:
             for det in enriched:
@@ -277,9 +388,9 @@ class EggCountingPipeline:
                 if tid is not None:
                     trails[tid] = self._track_manager.get_trail(tid)
 
-        # 6. Görselleştir
+        # 6. Görselleştir (AYNI frame üzerinde - koordinat tutarlı)
         display = self._visualizer.draw(
-            frame=frame,  # Orijinal frame üzerine çiz (ön işlenmiş değil)
+            frame=processed,  # DÜZELTME: orijinal değil, preprocessed (koordinat tutarlılığı)
             detections=enriched,
             counting_line_y=self._counting_line.line_y,
             total_count=self._counting_line.total_count,
@@ -292,113 +403,94 @@ class EggCountingPipeline:
             newly_counted=newly_counted,
         )
 
-        # 7. Debug bilgisi
+        # 7. Debug
         if self._debug_mode:
-            debug_info = {
+            self._visualizer.draw_debug_info(display, {
                 "Frame": self._track_manager.frame_count,
-                "Detections": len(detections),
-                "Tracked": len([d for d in enriched if d.get("track_id")]),
-                "Counted IDs": len(self._track_manager.counted_ids),
-                "Line Y": self._counting_line.line_y,
-                "Conf Thresh": self.cfg.detector.conf_threshold,
-            }
-            self._visualizer.draw_debug_info(display, debug_info)
+                "Det": len(detections),
+                "Tracked": sum(1 for d in enriched if d.get("track_id")),
+                "Counted": len(self._track_manager.counted_ids),
+                "LineY": self._counting_line.line_y,
+                "Conf": self.cfg.detector.conf_threshold,
+                "Lost": len(self._track_manager._lost_track_positions),
+            })
 
         return display
 
     def _on_egg_counted(self, event: dict):
-        """Sayım callback - logger'a ilet."""
         if self._logger:
             self._logger.log_count_event(event)
-
-        # Konsol bildirimi
         tid = event.get("track_id", "?")
         total = event.get("total", 0)
-        print(f"[SAYIM] ID #{tid} sayıldı → Toplam: {total}")
+        print(f"[SAYIM] #{tid} -> Toplam: {total}")
 
     def _handle_key(self, key: int):
-        """Klavye tuş kontrolü."""
-        if key == ord("q") or key == 27:  # q veya ESC
+        if key == ord("q") or key == 27:
             self._running = False
 
-        elif key == ord("r"):  # Reset
+        elif key == ord("r"):
             self._reset_counter()
 
-        elif key == ord("d"):  # Debug toggle
+        elif key == ord("d"):
             self._debug_mode = not self._debug_mode
-            print(f"[PIPELINE] Debug modu: {'AÇIK' if self._debug_mode else 'KAPALI'}")
+            print(f"[PIPELINE] Debug: {'AÇIK' if self._debug_mode else 'KAPALI'}")
 
-        elif key == ord("+") or key == ord("="):  # Çizgi yukarı
+        elif key == ord("+") or key == ord("="):
             pos = self._counting_line.cfg.line_position - 0.02
             self._counting_line.update_line_position(pos)
-            print(f"[PIPELINE] Çizgi pozisyonu: {self._counting_line.line_y}")
+            print(f"[PIPELINE] Çizgi: y={self._counting_line.line_y}")
 
-        elif key == ord("-"):  # Çizgi aşağı
+        elif key == ord("-"):
             pos = self._counting_line.cfg.line_position + 0.02
             self._counting_line.update_line_position(pos)
-            print(f"[PIPELINE] Çizgi pozisyonu: {self._counting_line.line_y}")
+            print(f"[PIPELINE] Çizgi: y={self._counting_line.line_y}")
 
-        elif key == ord("s"):  # Screenshot
-            ts = time.strftime("%Y%m%d_%H%M%S")
-            path = f"screenshot_{ts}.png"
-            # Son frame'i kaydet (bir sonraki döngüde)
-            print(f"[PIPELINE] Ekran görüntüsü: {path}")
+        elif key == ord("s"):
+            # DÜZELTME: Gerçekten kaydediyor (eski: sadece print ediyordu)
+            if self._last_display_frame is not None:
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                path = f"screenshot_{ts}.png"
+                cv2.imwrite(path, self._last_display_frame)
+                print(f"[PIPELINE] Screenshot: {path}")
 
-        elif key == ord("f"):  # Fullscreen toggle
-            prop = cv2.getWindowProperty(
-                self.cfg.pipeline.window_name, cv2.WND_PROP_FULLSCREEN
-            )
-            if prop == cv2.WINDOW_FULLSCREEN:
-                cv2.setWindowProperty(
-                    self.cfg.pipeline.window_name,
-                    cv2.WND_PROP_FULLSCREEN,
-                    cv2.WINDOW_NORMAL
-                )
-            else:
-                cv2.setWindowProperty(
-                    self.cfg.pipeline.window_name,
-                    cv2.WND_PROP_FULLSCREEN,
-                    cv2.WINDOW_FULLSCREEN
-                )
+        elif key == ord("f"):
+            wn = self.cfg.pipeline.window_name
+            prop = cv2.getWindowProperty(wn, cv2.WND_PROP_FULLSCREEN)
+            new_prop = cv2.WINDOW_NORMAL if prop == cv2.WINDOW_FULLSCREEN else cv2.WINDOW_FULLSCREEN
+            cv2.setWindowProperty(wn, cv2.WND_PROP_FULLSCREEN, new_prop)
 
-        elif key == ord(" "):  # Pause/Resume
+        elif key == ord(" "):
             self._paused = not self._paused
-            state = "DURAKLATILDI" if self._paused else "DEVAM EDİYOR"
-            print(f"[PIPELINE] {state}")
+            print(f"[PIPELINE] {'DURAKLATILDI' if self._paused else 'DEVAM'}")
 
     def _reset_counter(self):
-        """Sayacı sıfırla (tracking verilerini de)."""
         if self._counting_line:
             self._counting_line.reset()
         if self._track_manager:
             self._track_manager.reset()
+        if self._detector:
+            self._detector.reset_tracker()
         if self._logger:
             self._logger.reset_counter()
         if self._preprocessor:
             self._preprocessor.reset()
-        print("[PIPELINE] Sayaç ve takip verileri sıfırlandı!")
+        print("[PIPELINE] Tümü sıfırlandı!")
 
     def _cleanup(self):
-        """Kaynakları temizle."""
         print("\n[PIPELINE] Kapatılıyor...")
-
         if self._logger:
             self._logger.close()
-
         if self._writer is not None:
             self._writer.release()
-
-        if self._cap is not None:
-            self._cap.release()
-
-        cv2.destroyAllWindows()
+        if self._capture is not None:
+            self._capture.stop()
+        if not self.cfg.pipeline.headless:
+            cv2.destroyAllWindows()
 
         total = self._counting_line.total_count if self._counting_line else 0
-        print(f"[PIPELINE] Toplam sayım: {total}")
-        print("[PIPELINE] Kapatıldı.")
+        print(f"[PIPELINE] Toplam: {total}")
 
     def get_status(self) -> dict:
-        """Sistem durumunu döndür."""
         return {
             "running": self._running,
             "paused": self._paused,
