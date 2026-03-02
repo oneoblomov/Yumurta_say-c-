@@ -1,9 +1,7 @@
 /.vscode
 /Egg.v6i.yolo26
-/*__pycache__
+/*.pyc
 /*.ipynb
 /a1.py
-/egg
-/models
 /runs
 /logs
