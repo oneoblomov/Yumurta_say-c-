@@ -1,7 +1,10 @@
 /.vscode
 /Egg.v6i.yolo26
-/*.pyc
-/*.ipynb
+*.pyc
+*.ipynb
 /a1.py
 /runs
 /logs
+/data
+/models/yolo26n.pt
+todo.md

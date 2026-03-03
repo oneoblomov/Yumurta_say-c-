@@ -27,6 +27,7 @@ class CountLogger:
         self._buffer: List[dict] = []
         self._total_count: int = 0
         self._current_date: date = date.today()
+        self._closed = False
 
         self.log_dir = Path(config.log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -138,11 +139,15 @@ class CountLogger:
             print("[LOGGER] Sayaç sıfırlandı.")
 
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
         self.force_flush()
         print(f"[LOGGER] Kapatıldı. Günlük toplam: {self._total_count}")
 
     def __del__(self):
         try:
-            self.close()
+            if not self._closed:
+                self.close()
         except Exception:
             pass
