@@ -84,9 +84,9 @@ def parse_args():
                         help="Sayım yönü (default: top_to_bottom)")
 
     # ROI (3-çizgi sistemi)
-    parser.add_argument("--roi-top", type=float, default=0.35, dest="roi_top",
+    parser.add_argument("--roi-top", type=float, default=0.25, dest="roi_top",
                         help="Üst ROI sınırı 0.0-1.0 – YOLO sadece bu alandan itibaren çalışır (default: 0.35)")
-    parser.add_argument("--roi-bottom", type=float, default=0.65, dest="roi_bottom",
+    parser.add_argument("--roi-bottom", type=float, default=0.75, dest="roi_bottom",
                         help="Alt ROI sınırı 0.0-1.0 (default: 0.65)")
 
     # Kamera
