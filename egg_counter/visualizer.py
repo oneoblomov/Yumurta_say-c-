@@ -35,10 +35,12 @@ class Visualizer:
     def draw(self, frame: np.ndarray,
              detections: list,
              counting_line_y: int,
-             total_count: int,
-             active_tracks: int,
-             fps: float,
-             frame_width: int,
+             roi_top_y: int = -1,
+             roi_bottom_y: int = -1,
+             total_count: int = 0,
+             active_tracks: int = 0,
+             fps: float = 0.0,
+             frame_width: int = 0,
              trails: Optional[Dict[int, list]] = None,
              debug_mode: bool = False,
              show_trails: bool = True,
@@ -68,8 +70,10 @@ class Visualizer:
                 if tid and tid in trails:
                     self._draw_trail(frame, trails[tid], det.get("is_counted", False))
 
-        # 5. Sayım çizgisi
-        self._draw_counting_line(frame, counting_line_y, w)
+        # 5. Sayım çizgisi + ROI bandı
+        self._draw_counting_line(frame, counting_line_y, w,
+                                 roi_top_y=roi_top_y,
+                                 roi_bottom_y=roi_bottom_y)
 
         # 6. Parlama efekti
         if newly_counted and self.cfg.enable_count_flash:
@@ -173,25 +177,52 @@ class Visualizer:
         pts = np.array(trail, dtype=np.int32).reshape(-1, 1, 2)
         cv2.polylines(frame, [pts], False, color, 1, cv2.LINE_AA)
 
-    def _draw_counting_line(self, frame: np.ndarray, line_y: int, frame_width: int):
-        color = self.counter_cfg.line_color
+    def _draw_counting_line(self, frame: np.ndarray, line_y: int, frame_width: int,
+                             roi_top_y: int = -1, roi_bottom_y: int = -1):
+        h, w = frame.shape[:2]
+        if frame_width <= 0:
+            frame_width = w
+        color = self.counter_cfg.line_color      # sarı (0,255,255)
         thickness = self.counter_cfg.line_thickness
+        roi_color = self.counter_cfg.roi_line_color  # turuncu (0,165,255)
+        roi_thickness = self.counter_cfg.roi_line_thickness
 
+        # --- ROI BANDI (üst ve alt sınır arası saydam dolgu) ---
+        if roi_top_y >= 0 and roi_bottom_y > roi_top_y:
+            r1 = max(0, roi_top_y)
+            r2 = min(h, roi_bottom_y)
+            if r2 > r1:
+                band = frame[r1:r2, :].copy()
+                band[:] = roi_color
+                cv2.addWeighted(band, 0.07, frame[r1:r2, :], 0.93, 0, frame[r1:r2, :])
+
+            # Üst ROI çizgisi
+            cv2.line(frame, (0, roi_top_y), (frame_width, roi_top_y),
+                     roi_color, roi_thickness, cv2.LINE_AA)
+            cv2.putText(frame, "ROI GIRIS", (10, roi_top_y - 6),
+                        self._font, 0.38, roi_color, 1, cv2.LINE_AA)
+
+            # Alt ROI çizgisi
+            cv2.line(frame, (0, roi_bottom_y), (frame_width, roi_bottom_y),
+                     roi_color, roi_thickness, cv2.LINE_AA)
+            cv2.putText(frame, "ROI CIKIS", (10, roi_bottom_y + 14),
+                        self._font, 0.38, roi_color, 1, cv2.LINE_AA)
+
+        # --- Orta sayım çizgisi ---
         cv2.line(frame, (0, line_y), (frame_width, line_y), color, thickness, cv2.LINE_AA)
 
         # Margin zone - ROI blend (eski: frame.copy())
         margin = self.counter_cfg.crossing_margin
         if margin > 0:
-            h = frame.shape[0]
             my1 = max(0, line_y - margin)
             my2 = min(h, line_y + margin)
             if my2 > my1:
-                roi = frame[my1:my2, :]
-                zone = roi.copy()
+                roi_slice = frame[my1:my2, :]
+                zone = roi_slice.copy()
                 zone[:] = color
-                cv2.addWeighted(zone, 0.12, roi, 0.88, 0, roi)
+                cv2.addWeighted(zone, 0.12, roi_slice, 0.88, 0, roi_slice)
 
-        cv2.putText(frame, f"SAYIM CIZGISI", (10, line_y - 10),
+        cv2.putText(frame, "SAYIM CIZGISI", (10, line_y - 10),
                     self._font, 0.4, color, 1, cv2.LINE_AA)
 
     def _draw_count_flash(self, frame: np.ndarray, event: dict):

@@ -27,6 +27,9 @@ class CountingLine:
         self.cfg = config
         self.frame_height = frame_height
         self.line_y = int(frame_height * config.line_position)
+        # ROI sınırları – üst ve alt çizgi
+        self.roi_top_y = int(frame_height * config.roi_top_position)
+        self.roi_bottom_y = int(frame_height * config.roi_bottom_position)
         self.total_count: int = 0
         self._on_count_callbacks: List[Callable] = []
 
@@ -128,7 +131,16 @@ class CountingLine:
     def update_line_position(self, new_position: float):
         self.cfg.line_position = max(0.05, min(0.95, new_position))
         self.line_y = int(self.frame_height * self.cfg.line_position)
+        # ROI'yi orta çizgiye göre sıfırla (offset korunur)
+        offset = self.cfg.roi_bottom_position - self.cfg.roi_top_position
+        center = self.cfg.line_position
+        self.cfg.roi_top_position = max(0.0, center - offset / 2)
+        self.cfg.roi_bottom_position = min(1.0, center + offset / 2)
+        self.roi_top_y = int(self.frame_height * self.cfg.roi_top_position)
+        self.roi_bottom_y = int(self.frame_height * self.cfg.roi_bottom_position)
 
     def update_frame_height(self, new_height: int):
         self.frame_height = new_height
         self.line_y = int(new_height * self.cfg.line_position)
+        self.roi_top_y = int(new_height * self.cfg.roi_top_position)
+        self.roi_bottom_y = int(new_height * self.cfg.roi_bottom_position)

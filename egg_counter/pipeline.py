@@ -279,6 +279,7 @@ class EggCountingPipeline:
         self._counting_line.on_count(self._on_egg_counted)
 
         print(f"[PIPELINE] Hazır. Çizgi y={self._counting_line.line_y}, "
+              f"ROI y={self._counting_line.roi_top_y}-{self._counting_line.roi_bottom_y}, "
               f"Cihaz={self.cfg.detector.device}")
 
     def _init_video_writer(self):
@@ -397,9 +398,21 @@ class EggCountingPipeline:
         # 1. Ön işleme
         processed = self._preprocessor.process(frame)
 
-        # 2. YOLO + ByteTrack
-        result = self._detector.detect_and_track(processed)
+        # 2. YOLO + ByteTrack – SADECE ROI BANDINDA (FPS kazanımı)
+        # ROI: sayım çizgisinin üst ve alt sınırı arasındaki bant.
+        # Yalnızca bu alana giren nesneleri algıla; dışarıdaki bölge atlanır.
+        roi_top_y = self._counting_line.roi_top_y
+        roi_bottom_y = self._counting_line.roi_bottom_y
+        roi_frame = processed[roi_top_y:roi_bottom_y, :]   # ROI kırpması
+        result = self._detector.detect_and_track(roi_frame)
         detections = self._detector.parse_results(result)
+
+        # ROI koordinat ofseti: tüm bbox ve center y'lerini tam frame'e çevir
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox"]
+            det["bbox"] = (x1, y1 + roi_top_y, x2, y2 + roi_top_y)
+            cx, cy = det["center"]
+            det["center"] = (cx, cy + roi_top_y)
 
         # 3. Track yönetimi + spatial dedup
         enriched = self._track_manager.update(detections)
@@ -422,6 +435,8 @@ class EggCountingPipeline:
             frame=processed,  # DÜZELTME: orijinal değil, preprocessed (koordinat tutarlılığı)
             detections=enriched,
             counting_line_y=self._counting_line.line_y,
+            roi_top_y=roi_top_y,
+            roi_bottom_y=roi_bottom_y,
             total_count=self._counting_line.total_count,
             active_tracks=self._track_manager.get_active_count(),
             fps=self._fps,
@@ -440,6 +455,7 @@ class EggCountingPipeline:
                 "Tracked": sum(1 for d in enriched if d.get("track_id")),
                 "Counted": len(self._track_manager.counted_ids),
                 "LineY": self._counting_line.line_y,
+                "ROI": f"{roi_top_y}-{roi_bottom_y}",
                 "Conf": self.cfg.detector.conf_threshold,
                 "Lost": len(self._track_manager._lost_track_positions),
             })

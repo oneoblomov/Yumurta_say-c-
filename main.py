@@ -83,6 +83,12 @@ def parse_args():
                         choices=["top_to_bottom", "bottom_to_top", "both"],
                         help="Sayım yönü (default: top_to_bottom)")
 
+    # ROI (3-çizgi sistemi)
+    parser.add_argument("--roi-top", type=float, default=0.35, dest="roi_top",
+                        help="Üst ROI sınırı 0.0-1.0 – YOLO sadece bu alandan itibaren çalışır (default: 0.35)")
+    parser.add_argument("--roi-bottom", type=float, default=0.65, dest="roi_bottom",
+                        help="Alt ROI sınırı 0.0-1.0 (default: 0.65)")
+
     # Kamera
     parser.add_argument("--width", type=int, default=640,
                         help="Kamera genişliği (default: 640)")
@@ -157,6 +163,8 @@ def build_config(args) -> SystemConfig:
     config.counter.line_position = args.line_pos
     config.counter.direction = args.direction
     config.counter.post_cross_drop_frames = args.post_cross_drop
+    config.counter.roi_top_position = max(0.0, min(args.roi_top, args.line_pos - 0.01))
+    config.counter.roi_bottom_position = min(1.0, max(args.roi_bottom, args.line_pos + 0.01))
 
     # Preprocessor
     config.preprocessor.enable_clahe = not args.no_clahe
@@ -201,6 +209,7 @@ def main():
     print(f"  PostDrop   : {config.counter.post_cross_drop_frames} frame" if config.counter.post_cross_drop_frames > 0 else f"  PostDrop   : Kapalı")
     print(f"  Çizgi      : {config.counter.line_position:.0%}")
     print(f"  Yön        : {config.counter.direction}")
+    print(f"  ROI        : %{config.counter.roi_top_position:.0%} - %{config.counter.roi_bottom_position:.0%} (3-çizgi)")
     print(f"  Kamera     : {config.pipeline.camera_width}x{config.pipeline.camera_height}")
     print(f"  CLAHE      : {'Açık' if config.preprocessor.enable_clahe else 'Kapalı'}")
     print(f"  Stabil.    : {'Açık' if config.preprocessor.enable_stabilization else 'Kapalı'}")

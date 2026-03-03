@@ -77,6 +77,15 @@ class CounterConfig:
     # >0 = sayıldıktan bu kadar frame sonra trail + görselleme bırakılır (FPS kazanımı)
     post_cross_drop_frames: int = 0
 
+    # ROI (İlgi Alanı) sınırları – 3-çizgi sistemi
+    # Sadece bu bant içinde kalan nesneler YOLO'ya gönderilir (FPS kazanımı).
+    # Üst ROI çizgisi: line_position'dan yukarıya (default %15 üstte)
+    # Alt ROI çizgisi: line_position'dan aşağıya (default %15 altta)
+    roi_top_position: float = 0.35        # Üst ROI sınırı (0-1 arası)
+    roi_bottom_position: float = 0.65     # Alt ROI sınırı (0-1 arası)
+    roi_line_color: Tuple[int, int, int] = (0, 165, 255)   # ROI çizgi rengi (turuncu)
+    roi_line_thickness: int = 1
+
 
 @dataclass
 class VisualizerConfig:
