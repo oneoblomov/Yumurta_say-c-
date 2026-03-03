@@ -72,6 +72,11 @@ class CounterConfig:
     min_track_age: int = 2                # Hızlı bant için 2 frame yeterli
     spatial_dedup_radius: int = 40        # Aynı bölgedeki yeni ID -> eski olarak kabul et (px)
 
+    # Çizgi geçişi sonrası takibi bırak
+    # 0 = devre dışı (her zaman takip et)
+    # >0 = sayıldıktan bu kadar frame sonra trail + görselleme bırakılır (FPS kazanımı)
+    post_cross_drop_frames: int = 0
+
 
 @dataclass
 class VisualizerConfig:
@@ -132,6 +137,12 @@ class PipelineConfig:
     camera_height: int = 480
     camera_fps: int = 30
     camera_backend: str = "auto"          # auto | v4l2
+
+    # Kenar kırpma – FPS artırmak için (küçük frame -> hızlı inference)
+    # crop_ud: üstten ve alttan TOPLAM yüzde (örn. 20 -> her yandan %10)
+    # crop_lr: soldan ve sağdan TOPLAM yüzde (örn. 20 -> her yandan %10)
+    crop_ud: int = 0                      # 0 = kırpma yok (default)
+    crop_lr: int = 0                      # 0 = kırpma yok (default)
 
     target_fps: int = 25
     skip_frames: int = 0

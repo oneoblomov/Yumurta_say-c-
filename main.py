@@ -61,7 +61,7 @@ def parse_args():
 
     # Model
     parser.add_argument("--model", type=str,
-                        default="models/yolo26n_mod/best.pt",
+                        default="models/yolo26n_mod/best_openvino_model",
                         help="YOLO model yolu (.pt, .onnx, .ncnn)")
 
     # Algılama
@@ -98,11 +98,21 @@ def parse_args():
     parser.add_argument("--no-threaded", action="store_true",
                         help="Thread'li kamera yakalamayı kapat")
 
+    # Kenar kırpma (FPS artirmak için)
+    parser.add_argument("--up-down", type=int, default=0, dest="up_down",
+                        help="Üst+alt toplam kırpma yüzdes i (0-90). "
+                             "Herününden yarısı alınır. Ör: 20 -> üst %%10 + alt %%10 (default: 0)")
+    parser.add_argument("--left-right", type=int, default=0, dest="left_right",
+                        help="Sol+sağ toplam kırpma yüzdes i (0-90). "
+                             "Herününden yarısı alınır. Ör: 20 -> sol %%10 + sağ %%10 (default: 0)")
+
     # Tracker hassasiyeti
     parser.add_argument("--track-buffer", type=int, default=90,
                         help="Kayıp ID buffer (frame) (default: 90)")
     parser.add_argument("--match-thresh", type=float, default=0.85,
                         help="Tracker IoU eşleştirme eşiği (default: 0.85)")
+    parser.add_argument("--post-cross-drop", type=int, default=0, dest="post_cross_drop",
+                        help="Sayıldıktan kac frame sonra takip bırakılsın (0=kapalı, ör: 15) (default: 0)")
 
     # Ön işleme
     parser.add_argument("--no-clahe", action="store_true",
@@ -146,6 +156,7 @@ def build_config(args) -> SystemConfig:
     # Counter
     config.counter.line_position = args.line_pos
     config.counter.direction = args.direction
+    config.counter.post_cross_drop_frames = args.post_cross_drop
 
     # Preprocessor
     config.preprocessor.enable_clahe = not args.no_clahe
@@ -161,6 +172,8 @@ def build_config(args) -> SystemConfig:
     config.pipeline.fullscreen = args.fullscreen
     config.pipeline.headless = args.headless
     config.pipeline.use_threaded_capture = not args.no_threaded
+    config.pipeline.crop_ud = args.up_down
+    config.pipeline.crop_lr = args.left_right
 
     if args.save_output:
         config.pipeline.save_output = True
@@ -185,6 +198,7 @@ def main():
     print(f"  Tracker    : {config.tracker.tracker_type}")
     print(f"  TrackBuf   : {config.tracker.track_buffer} frame")
     print(f"  MatchThr   : {config.tracker.match_thresh}")
+    print(f"  PostDrop   : {config.counter.post_cross_drop_frames} frame" if config.counter.post_cross_drop_frames > 0 else f"  PostDrop   : Kapalı")
     print(f"  Çizgi      : {config.counter.line_position:.0%}")
     print(f"  Yön        : {config.counter.direction}")
     print(f"  Kamera     : {config.pipeline.camera_width}x{config.pipeline.camera_height}")
@@ -192,6 +206,10 @@ def main():
     print(f"  Stabil.    : {'Açık' if config.preprocessor.enable_stabilization else 'Kapalı'}")
     print(f"  Threaded   : {'Açık' if config.pipeline.use_threaded_capture else 'Kapalı'}")
     print(f"  Headless   : {'Açık' if config.pipeline.headless else 'Kapalı'}")
+    if config.pipeline.crop_ud > 0:
+        print(f"  Kırpma UD  : %{config.pipeline.crop_ud} (üst/alt %{config.pipeline.crop_ud//2})")
+    if config.pipeline.crop_lr > 0:
+        print(f"  Kırpma LR  : %{config.pipeline.crop_lr} (sol/sağ %{config.pipeline.crop_lr//2})")
     print(f"{'='*60}\n")
 
     pipeline = EggCountingPipeline(config)

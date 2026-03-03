@@ -188,6 +188,12 @@ class EggCountingPipeline:
         self._frame_width = 0
         self._frame_height = 0
 
+        # Kenar kırpma pikselleri (crop_ud / crop_lr'dan hesaplanır)
+        self._crop_top = 0
+        self._crop_bottom = 0
+        self._crop_left = 0
+        self._crop_right = 0
+
         # Video yazıcı
         self._writer: Optional[cv2.VideoWriter] = None
 
@@ -233,6 +239,24 @@ class EggCountingPipeline:
         self._frame_width = self._capture.frame_width
         self._frame_height = self._capture.frame_height
         print(f"[PIPELINE] Kaynak açıldı: {self._frame_width}x{self._frame_height}")
+
+        # Kenar kırpma piksel hesabı
+        # crop_ud / 2  üstten, crop_ud / 2 alttan (yüzde)
+        # crop_lr / 2  soldan, crop_lr / 2 sağdan (yüzde)
+        ud = max(0, min(self.cfg.pipeline.crop_ud, 90))   # güvenlik: en fazla %90
+        lr = max(0, min(self.cfg.pipeline.crop_lr, 90))
+        self._crop_top    = int(self._frame_height * (ud / 2) / 100)
+        self._crop_bottom = self._frame_height - int(self._frame_height * (ud / 2) / 100)
+        self._crop_left   = int(self._frame_width  * (lr / 2) / 100)
+        self._crop_right  = self._frame_width  - int(self._frame_width  * (lr / 2) / 100)
+
+        if ud > 0 or lr > 0:
+            # Modüller kırpılmış boyutu kullanmalı
+            self._frame_height = self._crop_bottom - self._crop_top
+            self._frame_width  = self._crop_right  - self._crop_left
+            print(f"[PIPELINE] Kırpma: üst-alt=%{ud} sol-sağ=%{lr} "
+                  f"-> etkin çözünürlük: {self._frame_width}x{self._frame_height}")
+
         return True
 
     def _init_modules(self):
@@ -365,6 +389,11 @@ class EggCountingPipeline:
         Eski: algılama=preprocessed, görselleştirme=orijinal -> koordinat UYUMSUZLUĞU.
         Yeni: preprocessed frame üzerinde algılama yapılır, aynı frame görselleştirilir.
         """
+        # 0. Kenar kırpma (FPS artırmak için – küçük frame, hızlı inference)
+        if self._crop_top or self._crop_left:
+            frame = frame[self._crop_top:self._crop_bottom,
+                          self._crop_left:self._crop_right]
+
         # 1. Ön işleme
         processed = self._preprocessor.process(frame)
 

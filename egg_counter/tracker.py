@@ -57,6 +57,7 @@ class TrackManager:
         """
         self._frame_count += 1
         current_active = set()
+        drop_frames = self.counter_cfg.post_cross_drop_frames
 
         enriched = []
         for det in detections:
@@ -69,6 +70,15 @@ class TrackManager:
 
             cx, cy = det["center"]
             current_active.add(tid)
+
+            # --- post_cross_drop: sayıldıktan N frame sonra takibi bırak ---
+            if drop_frames > 0 and tid in self.counted_at_frame:
+                frames_since = self._frame_count - self.counted_at_frame[tid]
+                if frames_since >= drop_frames:
+                    # Trail'i temizle (bellek + görselleme kazanımı)
+                    self.trails.pop(tid, None)
+                    # Bu detection'u enriched'e ekleme -> pipeline işlemiyor
+                    continue
 
             # Trail güncelle
             self.trails[tid].append((cx, cy))
