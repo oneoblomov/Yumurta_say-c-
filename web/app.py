@@ -9,7 +9,6 @@ import io
 import csv
 import json
 import asyncio
-import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -68,6 +67,7 @@ def _ctx(request: Request, **extra) -> dict:
         "langs": SUPPORTED_LANGUAGES,
         "t": tr,
         "alert_count": db.get_unacknowledged_count(),
+        "show_test_page": db.get_setting("show_test_page", "1") == "1",
         **extra,
     }
 
@@ -173,6 +173,17 @@ async def logs_page(request: Request):
     return templates.TemplateResponse("base.html", ctx)
 
 
+@app.get("/test-lab", response_class=HTMLResponse)
+async def test_lab_page(request: Request):
+    if db.get_setting("show_test_page", "1") != "1":
+        raise HTTPException(status_code=404, detail="Not found")
+    ctx = _ctx(request, page="test_lab")
+    if _is_htmx(request):
+        return templates.TemplateResponse("partials/test_lab.html", ctx)
+    ctx["page_content"] = "partials/test_lab.html"
+    return templates.TemplateResponse("base.html", ctx)
+
+
 # ============================================================ API: Pipeline
 @app.post("/api/pipeline/start")
 async def api_start(request: Request):
@@ -219,6 +230,11 @@ async def api_status():
 @app.get("/api/pipeline/events")
 async def api_events():
     return JSONResponse(pipeline.get_recent_events())
+
+
+@app.get("/api/test-mode/status")
+async def api_test_mode_status():
+    return JSONResponse(pipeline.get_test_status())
 
 
 # ============================================================ API: Stream

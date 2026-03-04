@@ -7,12 +7,8 @@ Kritik düzeltmeler:
   3. Warmup track() ile yapılıyor (predict ile değil)
   4. NCNN/ONNX model desteği eklendi
 """
-
-import os
-import tempfile
 import numpy as np
 from pathlib import Path
-from typing import Optional
 
 from .config import DetectorConfig, TrackerConfig
 

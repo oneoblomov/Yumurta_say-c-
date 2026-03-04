@@ -1,0 +1,8 @@
+opencv-python
+fastapi
+uvicorn
+ultralytics
+numpy
+jinja2
+python-multipart
+aiofiles

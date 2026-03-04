@@ -86,6 +86,19 @@ class PipelineManager:
         self._event_queue: queue.Queue = queue.Queue(maxsize=1000)
         self._recent_events: deque = deque(maxlen=50)
 
+        # Test mode metrics
+        self._test_lock = threading.Lock()
+        self._test_mode_enabled = False
+        self._test_expected_per_series = 30
+        self._test_series_timeout_seconds = 5.0
+        self._test_started_at: Optional[float] = None
+        self._test_series_active = False
+        self._test_series_start_at: Optional[float] = None
+        self._test_last_egg_at: Optional[float] = None
+        self._test_series_count = 0
+        self._test_series_index = 0
+        self._test_batches: deque = deque(maxlen=2000)  # tamamlanmış seriler
+
         # Alert tracking
         self._consecutive_failures = 0
         self._last_alert_time = 0.0
@@ -125,6 +138,8 @@ class PipelineManager:
             self._fps = 0.0
             self._fps_times.clear()
             self._consecutive_failures = 0
+            self._init_test_mode_from_settings()
+            self._reset_test_metrics()
 
             self._thread = threading.Thread(
                 target=self._processing_loop, daemon=True
@@ -183,14 +198,28 @@ class PipelineManager:
         return {"ok": True}
 
     def reset_count(self) -> Dict:
-        """Sayaç sıfırla (pipeline çalışırken)."""
+        """Sadece sayacı sıfırla.
+
+        Web arayüzündeki "Sıfırla" butonu yalnızca görünen sayımı 0'a çevirmeli;
+        kamera pipeline'ın diğer durumunu bozmamalıdır. Bu, CLI uygulamasındaki
+        `r` tuşuna bastığımızda olan tüm modüllerin sıfırlanmasından farklıdır.
+        Bu yöntem yalnızca iç sayacı ve veriyi 0'a çekip bir olay yayınlar.
+        """
+        # counting_line.reset() sıfır sayıyı tutar
         if self._counting_line:
             self._counting_line.reset()
-        if self._track_manager:
-            self._track_manager.reset()
-        if self._detector:
-            self._detector.reset_tracker()
+
+        # pipeline toplamını sıfırla (görünen değer)
         self._total_count = 0
+
+        # DB oturumu varsa hemen güncelle, böylece arayüz sorgulasa 0 döner
+        if self._session_id:
+            try:
+                self.db.update_session_count(self._session_id, 0)
+            except Exception:
+                pass
+
+        # olay yayınla (UI hemen güncellesin)
         self._emit_event("count_reset", {})
         return {"ok": True}
 
@@ -260,6 +289,80 @@ class PipelineManager:
 
     def get_recent_events(self) -> List[Dict]:
         return list(self._recent_events)
+
+    def get_test_status(self) -> Dict:
+        """Test modu metriklerini döndür (5 sn sessizlik-seri analizi)."""
+        with self._test_lock:
+            batches = list(self._test_batches)
+            active = {
+                "active": self._test_series_active,
+                "index": self._test_series_index + (1 if self._test_series_active else 0),
+                "started_at": (
+                    datetime.fromtimestamp(self._test_series_start_at).strftime("%H:%M:%S")
+                    if self._test_series_start_at else None
+                ),
+                "count": self._test_series_count,
+                "last_egg_at": (
+                    datetime.fromtimestamp(self._test_last_egg_at).strftime("%H:%M:%S")
+                    if self._test_last_egg_at else None
+                ),
+                "idle_seconds": 0.0,
+                "remaining_seconds": self._test_series_timeout_seconds,
+                "label": f"[{self._test_series_count}/{self._test_expected_per_series}]",
+            }
+
+        total_batches = len(batches)
+        actual_total = sum(b["actual"] for b in batches)
+        expected_total = sum(b["expected"] for b in batches)
+
+        if active["active"]:
+            actual_total += active["count"]
+            expected_total += self._test_expected_per_series
+
+        error_total = actual_total - expected_total
+
+        if total_batches > 0 and expected_total > 0:
+            mape = (
+                sum(abs(b["diff"]) / max(1, b["expected"]) for b in batches)
+                / total_batches
+            ) * 100.0
+        else:
+            mape = 0.0
+
+        accuracy = max(0.0, 100.0 - mape)
+        last_batch = batches[-1] if batches else None
+
+        now = time.time()
+        elapsed = 0.0
+        if self._test_started_at:
+            elapsed = max(0.0, now - self._test_started_at)
+
+        if active["active"] and self._test_last_egg_at is not None:
+            idle = max(0.0, now - self._test_last_egg_at)
+            active["idle_seconds"] = round(idle, 2)
+            active["remaining_seconds"] = round(
+                max(0.0, self._test_series_timeout_seconds - idle), 2
+            )
+
+        return {
+            "enabled": self._test_mode_enabled,
+            "running": self._running,
+            "window_seconds": self._test_series_timeout_seconds,
+            "expected_per_window": self._test_expected_per_series,
+            "elapsed_seconds": round(elapsed, 1),
+            "total_count": self._total_count,
+            "summary": {
+                "batch_count": total_batches,
+                "actual_total": actual_total,
+                "expected_total": expected_total,
+                "error_total": error_total,
+                "mape": round(mape, 2),
+                "accuracy": round(accuracy, 2),
+            },
+            "active_series": active,
+            "last_batch": last_batch,
+            "batches": batches[-40:],
+        }
 
     # ------------------------------------------------------------------ private
     def _build_config(self, source: str = None, **kw) -> SystemConfig:
@@ -436,12 +539,16 @@ class PipelineManager:
                 avg = sum(self._fps_times) / len(self._fps_times)
                 self._fps = 1.0 / max(avg, 1e-6)
 
+            # Test mode: aktif seri 5 sn sessizlik kontrolü
+            self._close_timed_out_series(now=time.time())
+
             # Buffer frame
             with self._frame_lock:
                 self._frame_buffer = display
             self._frame_event.set()
 
         # Loop ended
+        self._close_active_series(reason="pipeline_stopped", now=time.time())
         with self._frame_lock:
             self._frame_buffer = None
         self._frame_event.set()
@@ -525,6 +632,8 @@ class PipelineManager:
 
     def _on_egg_counted(self, event: Dict):
         """Sayım olayı callback."""
+        self._on_test_egg_counted(event)
+
         # DB'ye kaydet
         if self._session_id:
             try:
@@ -606,6 +715,124 @@ class PipelineManager:
         self._track_manager = None
         self._counting_line = None
         self._visualizer = None
+
+    def _init_test_mode_from_settings(self):
+        """DB ayarlarından test modu parametrelerini yükle."""
+        try:
+            enabled = str(self.db.get_setting("test_mode_enabled", "1"))
+            expected = int(self.db.get_setting("test_expected_batch", "30"))
+            window_sec = float(self.db.get_setting("test_window_seconds", "5"))
+
+            self._test_mode_enabled = enabled == "1"
+            self._test_expected_per_series = max(1, expected)
+            self._test_series_timeout_seconds = max(1.0, window_sec)
+        except Exception:
+            self._test_mode_enabled = True
+            self._test_expected_per_series = 30
+            self._test_series_timeout_seconds = 5.0
+
+    def _reset_test_metrics(self):
+        with self._test_lock:
+            now = time.time()
+            self._test_started_at = now
+            self._test_series_active = False
+            self._test_series_start_at = None
+            self._test_last_egg_at = None
+            self._test_series_count = 0
+            self._test_series_index = 0
+            self._test_batches.clear()
+
+    def _event_time(self, event: Dict) -> float:
+        ts = event.get("timestamp")
+        if isinstance(ts, (int, float)):
+            return float(ts)
+        return time.time()
+
+    def _on_test_egg_counted(self, event: Dict):
+        """Yumurta sayıldığında seri durumunu güncelle."""
+        if not self._test_mode_enabled:
+            return
+
+        now = self._event_time(event)
+
+        with self._test_lock:
+            # Arada 5+ sn sessizlik oluşmuşsa eski seriyi kapat, yenisini başlat.
+            if self._test_series_active and self._test_last_egg_at is not None:
+                idle = now - self._test_last_egg_at
+                if idle >= self._test_series_timeout_seconds:
+                    self._close_active_series_locked("idle_timeout", now)
+
+            if not self._test_series_active:
+                self._test_series_active = True
+                self._test_series_start_at = now
+                self._test_last_egg_at = now
+                self._test_series_count = 1
+                self._emit_event("test_series_started", {
+                    "series_index": self._test_series_index + 1,
+                    "started_at": datetime.fromtimestamp(now).strftime("%H:%M:%S"),
+                })
+                return
+
+            self._test_series_count += 1
+            self._test_last_egg_at = now
+
+    def _close_timed_out_series(self, now: Optional[float] = None):
+        """Aktif seride 5 sn yumurta gelmezse seriyi kapat."""
+        if not self._test_mode_enabled:
+            return
+
+        if now is None:
+            now = time.time()
+
+        with self._test_lock:
+            if not self._test_series_active or self._test_last_egg_at is None:
+                return
+            if now - self._test_last_egg_at >= self._test_series_timeout_seconds:
+                self._close_active_series_locked("idle_timeout", now)
+
+    def _close_active_series(self, reason: str, now: Optional[float] = None):
+        if not self._test_mode_enabled:
+            return
+        if now is None:
+            now = time.time()
+        with self._test_lock:
+            self._close_active_series_locked(reason, now)
+
+    def _close_active_series_locked(self, reason: str, now: float):
+        if not self._test_series_active or self._test_series_start_at is None:
+            return
+
+        self._test_series_index += 1
+        actual = int(self._test_series_count)
+        expected = int(self._test_expected_per_series)
+        diff = actual - expected
+        err_pct = (abs(diff) / max(1, expected)) * 100.0
+        acc_pct = max(0.0, 100.0 - err_pct)
+
+        batch = {
+            "index": self._test_series_index,
+            "start": datetime.fromtimestamp(self._test_series_start_at).strftime("%H:%M:%S"),
+            "end": datetime.fromtimestamp(now).strftime("%H:%M:%S"),
+            "actual": actual,
+            "expected": expected,
+            "diff": int(diff),
+            "error_pct": round(err_pct, 2),
+            "accuracy": round(acc_pct, 2),
+            "label": f"[{actual}/{expected}]",
+            "reason": reason,
+        }
+        self._test_batches.append(batch)
+
+        self._emit_event("test_series_closed", {
+            "series_index": self._test_series_index,
+            "result": batch["label"],
+            "reason": reason,
+        })
+
+        self._test_series_active = False
+        self._test_series_start_at = None
+        self._test_last_egg_at = None
+        self._test_series_count = 0
 
     def _create_placeholder(self) -> np.ndarray:
         """Kamera kapalıyken gösterilecek placeholder frame."""

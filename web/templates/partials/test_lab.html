@@ -1,0 +1,292 @@
+<!-- partials/test_lab.html - Test Modu Gösterge Paneli -->
+<div x-data="testLab()" x-init="init()">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+    <div class="flex flex-wrap items-center gap-3">
+      <button
+        @click="startPipeline()"
+        :disabled="status.running && !status.paused"
+        :class="status.running && !status.paused ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 shadow-green-200 shadow-md'"
+        class="flex items-center gap-2 px-5 py-2.5 text-white rounded-lg font-medium text-sm transition-all"
+      >
+        <i data-lucide="play" class="w-4 h-4"></i>
+        <span x-text="t.controls?.start || 'Başlat'"></span>
+      </button>
+
+      <button
+        @click="status.paused ? resumePipeline() : pausePipeline()"
+        x-show="status.running"
+        :class="status.paused ? 'bg-blue-500 hover:bg-blue-600' : 'bg-yellow-500 hover:bg-yellow-600'"
+        class="flex items-center gap-2 px-4 py-2.5 text-white rounded-lg font-medium text-sm transition-all"
+      >
+        <i :data-lucide="status.paused ? 'play' : 'pause'" class="w-4 h-4"></i>
+        <span x-text="status.paused ? (t.controls?.resume||'Devam') : (t.controls?.pause||'Duraklat')"></span>
+      </button>
+
+      <button
+        @click="stopPipeline()"
+        x-show="status.running"
+        class="flex items-center gap-2 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium text-sm transition-all"
+      >
+        <i data-lucide="square" class="w-4 h-4"></i>
+        <span x-text="t.controls?.stop || 'Durdur'"></span>
+      </button>
+
+      <button
+        @click="resetCount()"
+        class="flex items-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-all border border-gray-200"
+      >
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+        <span x-text="t.controls?.reset || 'Sıfırla'"></span>
+      </button>
+
+      <div class="ml-auto flex items-center gap-2">
+        <label class="text-xs text-gray-500">Kaynak:</label>
+        <input
+          x-model="source"
+          type="text"
+          placeholder="0 veya video.mp4"
+          class="px-3 py-2 border border-gray-200 rounded-lg text-sm w-40 focus:ring-2 focus:ring-primary-300 focus:border-primary-400 outline-none"
+        />
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <p class="text-xs text-gray-500">Son Seri</p>
+      <p class="text-3xl font-bold mt-1" x-text="lastLabel"></p>
+      <p class="text-xs text-gray-400 mt-1" x-text="windowInfo"></p>
+    </div>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <p class="text-xs text-gray-500">Toplam Gerçek</p>
+      <p class="text-3xl font-bold mt-1" x-text="stats.summary.actual_total || 0"></p>
+      <p class="text-xs text-gray-400 mt-1">Sürekli biriken sayı</p>
+    </div>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <p class="text-xs text-gray-500">Toplam Beklenen</p>
+      <p class="text-3xl font-bold mt-1" x-text="stats.summary.expected_total || 0"></p>
+      <p class="text-xs text-gray-400 mt-1">Batch × hedef</p>
+    </div>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <p class="text-xs text-gray-500">Hata (Toplam)</p>
+      <p
+        class="text-3xl font-bold mt-1"
+        :class="(stats.summary.error_total||0) === 0 ? 'text-green-600' : 'text-amber-600'"
+        x-text="stats.summary.error_total || 0"
+      ></p>
+      <p class="text-xs text-gray-400 mt-1">Gerçek - Beklenen</p>
+    </div>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <p class="text-xs text-gray-500">Doğruluk / MAPE</p>
+      <p class="text-2xl font-bold mt-1" x-text="`${stats.summary.accuracy || 0}%`"></p>
+      <p class="text-xs text-gray-400 mt-1" x-text="`MAPE: ${stats.summary.mape || 0}%`"></p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-sm font-semibold text-gray-700">Aktif Seri Durumu</p>
+        <span
+          class="text-xs px-2 py-1 rounded-full"
+          :class="activeSeries.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'"
+          x-text="activeSeries.active ? 'AKTİF' : 'BEKLİYOR'"
+        ></span>
+      </div>
+
+      <div class="flex items-end justify-between gap-4">
+        <div>
+          <p class="text-xs text-gray-500">Anlık Seri</p>
+          <p class="text-3xl font-bold" x-text="activeLabel"></p>
+          <p class="text-xs text-gray-400 mt-1" x-text="activeMeta"></p>
+        </div>
+        <div class="text-right">
+          <p class="text-xs text-gray-500">Kapanışa kalan</p>
+          <p class="text-2xl font-bold tabular-nums" x-text="`${activeSeries.remaining_seconds ?? 0}s`"></p>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <div class="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+          <div
+            class="h-2 rounded-full transition-all duration-300"
+            :class="activeSeries.active ? 'bg-primary-500' : 'bg-gray-300'"
+            :style="`width:${countdownPercent}%`"
+          ></div>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Seri, son yumurtadan sonra 5 sn yeni yumurta gelmezse kapanır.</p>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+      <p class="text-sm font-semibold text-gray-700 mb-3">Son Seriler (Görsel)</p>
+      <div class="space-y-2">
+        <template x-for="b in visualRows" :key="`v-${b.index}`">
+          <div>
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span class="text-gray-500" x-text="`Seri ${b.index}`"></span>
+              <span class="font-semibold" x-text="b.label"></span>
+            </div>
+            <div class="h-2 rounded-full bg-gray-100 overflow-hidden">
+              <div
+                class="h-2 rounded-full"
+                :class="b.actual >= b.expected ? 'bg-green-500' : 'bg-amber-500'"
+                :style="`width:${Math.min(100, (b.actual / Math.max(1, b.expected)) * 100)}%`"
+              ></div>
+            </div>
+          </div>
+        </template>
+        <p x-show="visualRows.length===0" class="text-xs text-gray-400">Görsel seri verisi henüz yok.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="font-semibold text-sm text-gray-700">5sn Sessizlikle Kapanan Seri Geçmişi</h3>
+      <span class="text-xs text-gray-500" x-text="`Seri: ${stats.summary.batch_count || 0}`"></span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-4 py-2 font-medium">#</th>
+            <th class="text-left px-4 py-2 font-medium">Aralık</th>
+            <th class="text-left px-4 py-2 font-medium">Sonuç</th>
+            <th class="text-left px-4 py-2 font-medium">Fark</th>
+            <th class="text-left px-4 py-2 font-medium">Hata %</th>
+            <th class="text-left px-4 py-2 font-medium">Doğruluk %</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <template x-for="b in rows" :key="`${b.index}-${b.start}-${b.end}`">
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-2" x-text="b.index"></td>
+              <td class="px-4 py-2" x-text="`${b.start} - ${b.end}`"></td>
+              <td class="px-4 py-2 font-semibold" x-text="b.label"></td>
+              <td
+                class="px-4 py-2"
+                :class="b.diff === 0 ? 'text-green-600' : 'text-amber-600'"
+                x-text="b.diff"
+              ></td>
+              <td class="px-4 py-2" x-text="b.error_pct"></td>
+              <td class="px-4 py-2" x-text="b.accuracy"></td>
+            </tr>
+          </template>
+          <tr x-show="rows.length===0">
+            <td colspan="6" class="px-4 py-6 text-center text-gray-400">
+              Henüz test batch oluşmadı.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function testLab() {
+    return {
+      source: "0",
+      timer: null,
+      stats: { summary: {} },
+      rows: [],
+      visualRows: [],
+      lastLabel: "[0/30]",
+      windowInfo: "5 sn sessizlik kuralı",
+      activeSeries: { active: false, remaining_seconds: 5, count: 0 },
+      activeLabel: "[0/30]",
+      activeMeta: "Henüz seri başlamadı",
+      countdownPercent: 0,
+      status: {
+        running: false,
+        paused: false,
+      },
+      get t() {
+        return this.$root?.__x?.$data?.t || {};
+      },
+      init() {
+        this.refresh();
+        this.timer = setInterval(() => this.refresh(), 1000);
+      },
+      async refresh() {
+        await Promise.all([this.fetchTestStats(), this.fetchPipelineStatus()]);
+      },
+      async fetchPipelineStatus() {
+        try {
+          const r = await fetch("/api/pipeline/status");
+          this.status = await r.json();
+        } catch (e) {}
+      },
+      async fetchTestStats() {
+        try {
+          const r = await fetch("/api/test-mode/status");
+          const d = await r.json();
+          this.stats = d || { summary: {} };
+          this.rows = (d.batches || []).slice().reverse();
+          this.visualRows = this.rows.slice(0, 6).reverse();
+
+          if (d.last_batch && d.last_batch.label) {
+            this.lastLabel = d.last_batch.label;
+          }
+
+          this.activeSeries = d.active_series || {
+            active: false,
+            count: 0,
+            remaining_seconds: 5,
+            label: "[0/30]",
+          };
+
+          const exp = d.expected_per_window || 30;
+          const ws = d.window_seconds || 5;
+          this.windowInfo = `${ws} sn sessizlik | hedef ${exp}`;
+
+          this.activeLabel = this.activeSeries.label || `[0/${exp}]`;
+          if (this.activeSeries.active) {
+            this.activeMeta = `Seri #${this.activeSeries.index || '-'} | son yumurta: ${this.activeSeries.last_egg_at || '-'}`;
+            const rem = Number(this.activeSeries.remaining_seconds || 0);
+            this.countdownPercent = Math.max(0, Math.min(100, (rem / ws) * 100));
+          } else {
+            this.activeMeta = "Yeni yumurta bekleniyor";
+            this.countdownPercent = 0;
+          }
+        } catch (e) {}
+      },
+      async startPipeline() {
+        const res = await fetch("/api/pipeline/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: this.source || undefined }),
+        });
+        const d = await res.json();
+        if (!d.ok) showToast(d.error || "Başlatılamadı", "error");
+        else showToast("Pipeline başlatıldı", "success");
+        await this.refresh();
+      },
+      async stopPipeline() {
+        const res = await fetch("/api/pipeline/stop", { method: "POST" });
+        const d = await res.json();
+        if (d.ok) showToast("Pipeline durduruldu", "info");
+        await this.refresh();
+      },
+      async pausePipeline() {
+        await fetch("/api/pipeline/pause", { method: "POST" });
+        await this.fetchPipelineStatus();
+      },
+      async resumePipeline() {
+        await fetch("/api/pipeline/resume", { method: "POST" });
+        await this.fetchPipelineStatus();
+      },
+      async resetCount() {
+        await fetch("/api/pipeline/reset", { method: "POST" });
+        showToast("Sayaç sıfırlandı", "info");
+        await this.refresh();
+      },
+    };
+  }
+</script>

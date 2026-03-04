@@ -171,6 +171,20 @@
           <i data-lucide="settings" class="w-4 h-4"></i>
           <span x-text="t.nav?.settings || 'Ayarlar'"></span>
         </a>
+        {% if show_test_page %}
+        <a
+          href="/test-lab"
+          hx-get="/test-lab"
+          hx-target="#main-content"
+          hx-push-url="true"
+          @click="sidebarOpen=false; currentPage='test-lab'"
+          :class="currentPage==='test-lab' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <i data-lucide="flask-conical" class="w-4 h-4"></i>
+          <span x-text="t.nav?.test_lab || 'Test Modu'"></span>
+        </a>
+        {% endif %}
       </nav>
 
       <!-- Sidebar Footer -->

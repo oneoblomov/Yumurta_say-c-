@@ -5,7 +5,9 @@
         "records": "Kayıtlar",
         "stats": "İstatistikler",
         "logs": "Log Geçmişi",
-        "settings": "Ayarlar"
+        "settings": "Ayarlar",
+        "test_lab": "Test Modu",
+        "test-lab": "Test Modu"
     },
     "status": {
         "running": "Çalışıyor",

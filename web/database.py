@@ -161,6 +161,11 @@ class Database:
             ("language", "tr", "display", "Arayüz dili"),
             ("theme", "light", "display", "Tema"),
             ("stream_quality", "70", "display", "Video akış kalitesi"),
+            # Test Mode
+            ("show_test_page", "1", "test", "Test sayfasını menüde göster"),
+            ("test_mode_enabled", "1", "test", "5 sn test penceresi analizi"),
+            ("test_expected_batch", "30", "test", "Pencere başına beklenen yumurta"),
+            ("test_window_seconds", "5", "test", "Test pencere süresi (sn)"),
         ]
         for key, value, category, desc in defaults:
             self.conn.execute(
