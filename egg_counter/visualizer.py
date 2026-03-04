@@ -236,6 +236,9 @@ class Visualizer:
         """
         HUD paneli. Düzeltme: ROI blend (eski: frame.copy()).
         """
+        if self.cfg.headless:
+            return  # Web arayüzünde HUD gizle
+
         lines = [
             f"TOPLAM: {total_count}",
             f"AKTIF:  {active_tracks}",

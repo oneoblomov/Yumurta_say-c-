@@ -1,0 +1,74 @@
+/* app.css - Özel stiller */
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* Smooth transitions */
+* { scroll-behavior: smooth; }
+[x-cloak] { display: none !important; }
+
+/* Camera feed aspect ratio fallback */
+.aspect-video { aspect-ratio: 16/9; }
+
+/* Table responsive: horizontal scroll indicator */
+.overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+/* Pulse animation for live badge */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* Chart.js responsive fix */
+canvas { max-width: 100% !important; }
+
+/* Mobile: stack controls */
+@media (max-width: 640px) {
+    .aspect-video { aspect-ratio: 4/3; }
+}
+
+/* Transition for sidebar */
+aside { transition: transform 0.2s ease-in-out; }
+
+/* Print-friendly */
+@media print {
+    aside, header, .no-print { display: none !important; }
+    main { margin: 0 !important; padding: 0 !important; }
+}
+
+/* Custom focus ring */
+input:focus, select:focus, textarea:focus, button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Toast animation */
+[x-transition] {
+    transition-property: opacity, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+}
+
+/* Loading shimmer */
+.shimmer {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Badge bounce on count */
+@keyframes count-bounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+}
+.count-bounce { animation: count-bounce 0.3s ease-out; }

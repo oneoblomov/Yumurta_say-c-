@@ -1,0 +1,238 @@
+<!-- partials/logs.html - Log Geçmişi -->
+<div x-data="logsPage()" x-init="init()">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h2
+      class="text-lg font-bold text-gray-800"
+      x-text="t.logs?.title || 'Log Geçmişi'"
+    ></h2>
+    <div class="flex items-center gap-2">
+      <input
+        type="date"
+        value="{{ log_date }}"
+        @change="changeDate($event.target.value)"
+        class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+      />
+      <a
+        :href="'/api/export/csv?date_str='+logDate"
+        class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors border border-gray-200"
+      >
+        <i data-lucide="download" class="w-3.5 h-3.5 inline mr-1"></i>
+        CSV
+      </a>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
+    <button
+      @click="tab='events'"
+      :class="tab==='events'?'bg-white shadow-sm text-gray-800':'text-gray-500 hover:text-gray-700'"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      x-text="t.logs?.events || 'Sayım Olayları'"
+    ></button>
+    <button
+      @click="tab='alerts'"
+      :class="tab==='alerts'?'bg-white shadow-sm text-gray-800':'text-gray-500 hover:text-gray-700'"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      x-text="t.logs?.alerts || 'Uyarılar'"
+    ></button>
+  </div>
+
+  <!-- Count Events -->
+  <div
+    x-show="tab==='events'"
+    class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+  >
+    <!-- Search -->
+    <div class="px-4 py-3 border-b border-gray-100 bg-gray-50">
+      <input
+        x-model="searchQuery"
+        type="text"
+        :placeholder="t.logs?.search || 'Ara (track id, zaman...)'"
+        class="w-full sm:w-64 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+      />
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-semibold text-gray-600 text-xs">
+              ID
+            </th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600 text-xs"
+              x-text="t.logs?.time || 'Zaman'"
+            ></th>
+            <th class="text-left px-4 py-3 font-semibold text-gray-600 text-xs">
+              Track
+            </th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600 text-xs"
+              x-text="t.logs?.session || 'Oturum'"
+            ></th>
+            <th
+              class="text-right px-4 py-3 font-semibold text-gray-600 text-xs"
+            >
+              CX,CY
+            </th>
+            <th
+              class="text-right px-4 py-3 font-semibold text-gray-600 text-xs"
+              x-text="t.logs?.confidence || 'Güven'"
+            ></th>
+            <th
+              class="text-right px-4 py-3 font-semibold text-gray-600 text-xs"
+              x-text="t.logs?.total || 'Toplam'"
+            ></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for e in events %}
+          <tr
+            class="hover:bg-gray-50 transition-colors text-xs event-row"
+            data-search="{{ e.timestamp }} {{ e.track_id }} {{ e.session_id }}"
+          >
+            <td class="px-4 py-2.5 font-mono text-gray-400">{{ e.id }}</td>
+            <td class="px-4 py-2.5 whitespace-nowrap">{{ e.timestamp }}</td>
+            <td class="px-4 py-2.5 font-mono font-medium">
+              #{{ e.track_id or '' }}
+            </td>
+            <td class="px-4 py-2.5 text-gray-500">#{{ e.session_id }}</td>
+            <td class="px-4 py-2.5 text-right text-gray-500">
+              {{ e.cx }},{{ e.cy }}
+            </td>
+            <td class="px-4 py-2.5 text-right">
+              <span
+                class="px-1.5 py-0.5 rounded text-xs
+                                {{ 'bg-green-50 text-green-700' if e.confidence >= 0.5 else 'bg-yellow-50 text-yellow-700' }}"
+              >
+                {{ (e.confidence * 100)|round(0)|int }}%
+              </span>
+            </td>
+            <td class="px-4 py-2.5 text-right font-bold">
+              {{ e.running_total }}
+            </td>
+          </tr>
+          {% endfor %} {% if not events %}
+          <tr>
+            <td colspan="7" class="px-4 py-12 text-center text-gray-400">
+              <i
+                data-lucide="scroll-text"
+                class="w-8 h-8 mx-auto mb-2 opacity-30"
+              ></i>
+              <span
+                x-text="t.logs?.empty || 'Bu tarihte log bulunamadı'"
+              ></span>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if events %}
+    <div class="px-4 py-3 border-t border-gray-100 text-xs text-gray-500">
+      {{ events|length }} kayıt gösteriliyor
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Alerts -->
+  <div
+    x-show="tab==='alerts'"
+    class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+  >
+    <div
+      class="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between"
+    >
+      <span
+        class="text-sm font-medium text-gray-600"
+        x-text="t.logs?.alert_history || 'Uyarı Geçmişi'"
+      ></span>
+      <button
+        @click="ackAll()"
+        class="text-xs text-primary-600 hover:underline font-medium"
+        x-text="t.alerts?.ack_all || 'Tümünü okundu yap'"
+      ></button>
+    </div>
+    <div class="divide-y divide-gray-50">
+      {% for a in alerts %}
+      <div
+        class="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors {{ 'opacity-60' if a.acknowledged else '' }}"
+      >
+        <span
+          class="mt-0.5 {% if a.severity == 'info' %}text-blue-500 {% elif a.severity == 'warning' %}text-yellow-500 {% elif a.severity == 'error' %}text-red-500 {% elif a.severity == 'critical' %}text-red-600 {% endif %}"
+        >
+          <i
+            data-lucide="{{ 'info' if a.severity == 'info' else 'alert-triangle' }}"
+            class="w-4 h-4"
+          ></i>
+        </span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span
+              class="text-xs font-medium px-1.5 py-0.5 rounded {% if a.severity == 'info' %}bg-blue-50 text-blue-600 {% elif a.severity == 'warning' %}bg-yellow-50 text-yellow-600 {% elif a.severity == 'error' %}bg-red-50 text-red-600 {% elif a.severity == 'critical' %}bg-red-100 text-red-700 {% endif %}"
+            >
+              {{ a.type }}
+            </span>
+            {% if a.acknowledged %}
+            <span class="text-xs text-gray-400">✓</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-gray-700 mt-0.5">{{ a.message }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">{{ a.created_at }}</p>
+        </div>
+        {% if not a.acknowledged %}
+        <button
+          @click="ackAlert({{ a.id }})"
+          class="shrink-0 px-2 py-1 text-xs text-primary-600 hover:bg-primary-50 rounded transition-colors"
+        >
+          Okundu
+        </button>
+        {% endif %}
+      </div>
+      {% endfor %} {% if not alerts %}
+      <div class="px-4 py-12 text-center text-gray-400">
+        <i data-lucide="bell-off" class="w-8 h-8 mx-auto mb-2 opacity-30"></i>
+        <span x-text="t.alerts?.empty || 'Uyarı bulunmuyor'"></span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  function logsPage() {
+    return {
+      tab: "events",
+      logDate: "{{ log_date }}",
+      searchQuery: "",
+      init() {
+        this.$watch("searchQuery", (q) => {
+          document.querySelectorAll(".event-row").forEach((row) => {
+            const text = row.dataset.search || row.textContent;
+            row.style.display = text.toLowerCase().includes(q.toLowerCase())
+              ? ""
+              : "none";
+          });
+        });
+      },
+      changeDate(d) {
+        this.logDate = d;
+        htmx.ajax("GET", "/logs?date=" + d, {
+          target: "#main-content",
+          swap: "innerHTML",
+        });
+      },
+      async ackAlert(id) {
+        await fetch("/api/alerts/" + id + "/ack", { method: "POST" });
+        location.reload();
+      },
+      async ackAll() {
+        await fetch("/api/alerts/ack-all", { method: "POST" });
+        location.reload();
+      },
+    };
+  }
+</script>

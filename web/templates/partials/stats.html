@@ -1,0 +1,284 @@
+<!-- partials/stats.html - İstatistikler -->
+<div x-data="statsPage()" x-init="init()">
+
+    <!-- Quick Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <!-- Today -->
+        <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="bg-blue-50 rounded-lg p-2.5">
+                    <i data-lucide="calendar-check" class="w-5 h-5 text-blue-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 font-medium" x-text="t.stats?.today || 'Bugün'"></p>
+                    <p class="text-xl font-bold">{{ today_count }}</p>
+                </div>
+            </div>
+        </div>
+        <!-- This Week -->
+        <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="bg-green-50 rounded-lg p-2.5">
+                    <i data-lucide="calendar-range" class="w-5 h-5 text-green-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 font-medium" x-text="t.stats?.week || 'Bu Hafta'"></p>
+                    <p class="text-xl font-bold">{{ week_count }}</p>
+                </div>
+            </div>
+        </div>
+        <!-- This Month -->
+        <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="bg-purple-50 rounded-lg p-2.5">
+                    <i data-lucide="calendar" class="w-5 h-5 text-purple-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 font-medium" x-text="t.stats?.month || 'Bu Ay'"></p>
+                    <p class="text-xl font-bold">{{ month_count }}</p>
+                </div>
+            </div>
+        </div>
+        <!-- All Time -->
+        <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="bg-orange-50 rounded-lg p-2.5">
+                    <i data-lucide="infinity" class="w-5 h-5 text-orange-500"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-500 font-medium" x-text="t.stats?.all_time || 'Toplam'"></p>
+                    <p class="text-xl font-bold">{{ all_time }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Row -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="bg-gradient-to-br from-primary-50 to-blue-50 rounded-xl p-4 border border-primary-100">
+            <p class="text-xs text-primary-600 font-medium mb-1" x-text="t.stats?.daily_avg || 'Günlük Ortalama (30 gün)'"></p>
+            <p class="text-2xl font-bold text-primary-700">{{ daily_avg }}</p>
+        </div>
+        <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+            <p class="text-xs text-green-600 font-medium mb-1" x-text="t.stats?.peak || 'En Yüksek Gün'"></p>
+            {% if peak_day %}
+            <p class="text-2xl font-bold text-green-700">{{ peak_day.total_count }}</p>
+            <p class="text-xs text-green-500">{{ peak_day.date }}</p>
+            {% else %}
+            <p class="text-2xl font-bold text-green-700">-</p>
+            {% endif %}
+        </div>
+        <div class="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-4 border border-orange-100">
+            <p class="text-xs text-orange-600 font-medium mb-1" x-text="t.stats?.goals || 'Aktif Hedefler'"></p>
+            {% for g in goals %}
+            <p class="text-sm font-medium text-orange-700">
+                {{ g.type|capitalize }}: {{ g.target_count }}
+            </p>
+            {% endfor %}
+            {% if not goals %}
+            <p class="text-orange-400 text-sm">-</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <!-- Daily Trend Chart -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-sm text-gray-700" x-text="t.stats?.daily_trend || 'Günlük Trend'"></h3>
+                <select @change="changeDays($event.target.value)"
+                        class="text-xs border border-gray-200 rounded-lg px-2 py-1">
+                    <option value="7" {{ 'selected' if days == 7 else '' }}>7 gün</option>
+                    <option value="14" {{ 'selected' if days == 14 else '' }}>14 gün</option>
+                    <option value="30" {{ 'selected' if days == 30 else '' }}>30 gün</option>
+                    <option value="90" {{ 'selected' if days == 90 else '' }}>90 gün</option>
+                    <option value="365" {{ 'selected' if days == 365 else '' }}>1 yıl</option>
+                </select>
+            </div>
+            <div class="h-64">
+                <canvas id="dailyTrendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Monthly Trend -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.monthly_trend || 'Aylık Trend'"></h3>
+            <div class="h-64">
+                <canvas id="monthlyTrendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Hourly Distribution -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.hourly || 'Saatlik Dağılım (Bugün)'"></h3>
+            <div class="h-64">
+                <canvas id="hourlyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Prediction -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.prediction || 'Tahmin (Sonraki 7 gün)'"></h3>
+            <div class="h-64">
+                <canvas id="predictionChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function statsPage() {
+    return {
+        dailyTrend: {{ daily_trend|safe }},
+        monthlyTrend: {{ monthly_trend|safe }},
+        hourlyDist: {{ hourly_dist|safe }},
+        charts: {},
+        init() {
+            this.$nextTick(() => this.renderCharts());
+        },
+        changeDays(days) {
+            htmx.ajax('GET', '/stats?days='+days, {target:'#main-content', swap:'innerHTML'});
+        },
+        renderCharts() {
+            this.renderDailyTrend();
+            this.renderMonthlyTrend();
+            this.renderHourly();
+            this.renderPrediction();
+        },
+        renderDailyTrend() {
+            const el = document.getElementById('dailyTrendChart');
+            if (!el) return;
+            const d = this.dailyTrend;
+            new Chart(el, {
+                type:'line',
+                data:{
+                    labels: d.map(x=>x.date.slice(5)),
+                    datasets:[{
+                        label: this.t?.stats?.count||'Sayım',
+                        data: d.map(x=>x.count),
+                        borderColor:'rgb(59,130,246)',
+                        backgroundColor:'rgba(59,130,246,0.1)',
+                        fill:true, tension:0.3, pointRadius:3
+                    }]
+                },
+                options:{
+                    responsive:true, maintainAspectRatio:false,
+                    plugins:{legend:{display:false}},
+                    scales:{
+                        x:{grid:{display:false},ticks:{font:{size:9},maxTicksLimit:10}},
+                        y:{beginAtZero:true,ticks:{precision:0}}
+                    }
+                }
+            });
+        },
+        renderMonthlyTrend() {
+            const el = document.getElementById('monthlyTrendChart');
+            if (!el) return;
+            const d = this.monthlyTrend;
+            new Chart(el, {
+                type:'bar',
+                data:{
+                    labels: d.map(x=>x.month),
+                    datasets:[{
+                        label: this.t?.stats?.count||'Sayım',
+                        data: d.map(x=>x.count),
+                        backgroundColor:'rgba(34,197,94,0.6)',
+                        borderColor:'rgb(34,197,94)',
+                        borderWidth:1, borderRadius:6
+                    }]
+                },
+                options:{
+                    responsive:true, maintainAspectRatio:false,
+                    plugins:{legend:{display:false}},
+                    scales:{
+                        x:{grid:{display:false}},
+                        y:{beginAtZero:true,ticks:{precision:0}}
+                    }
+                }
+            });
+        },
+        renderHourly() {
+            const el = document.getElementById('hourlyChart');
+            if (!el) return;
+            const d = this.hourlyDist;
+            new Chart(el, {
+                type:'bar',
+                data:{
+                    labels: d.map(x=>x.hour+':00'),
+                    datasets:[{
+                        data: d.map(x=>x.count),
+                        backgroundColor:'rgba(168,85,247,0.5)',
+                        borderColor:'rgb(168,85,247)',
+                        borderWidth:1, borderRadius:4
+                    }]
+                },
+                options:{
+                    responsive:true, maintainAspectRatio:false,
+                    plugins:{legend:{display:false}},
+                    scales:{
+                        x:{grid:{display:false},ticks:{font:{size:8}}},
+                        y:{beginAtZero:true,ticks:{precision:0}}
+                    }
+                }
+            });
+        },
+        renderPrediction() {
+            const el = document.getElementById('predictionChart');
+            if (!el) return;
+            const d = this.dailyTrend;
+            if (d.length < 3) {
+                el.parentElement.innerHTML = '<p class="text-gray-400 text-center mt-16 text-sm">Tahmin için yeterli veri yok (min 3 gün)</p>';
+                return;
+            }
+            // Simple linear regression prediction
+            const counts = d.map(x=>x.count);
+            const n = counts.length;
+            const xm = (n-1)/2;
+            const ym = counts.reduce((a,b)=>a+b,0)/n;
+            let num=0, den=0;
+            for(let i=0;i<n;i++){num+=(i-xm)*(counts[i]-ym);den+=(i-xm)*(i-xm);}
+            const slope = den!==0 ? num/den : 0;
+            const intercept = ym - slope*xm;
+
+            const labels = [...d.map(x=>x.date.slice(5))];
+            const actual = [...counts];
+            const predicted = [];
+            for(let i=0;i<n;i++) predicted.push(null);
+            predicted[n-1] = counts[n-1]; // Connect point
+
+            // Predict 7 days
+            const lastDate = new Date(d[n-1].date);
+            for(let i=1;i<=7;i++){
+                const nd = new Date(lastDate);
+                nd.setDate(nd.getDate()+i);
+                labels.push((nd.getMonth()+1)+'-'+nd.getDate());
+                actual.push(null);
+                predicted.push(Math.max(0,Math.round(intercept+slope*(n-1+i))));
+            }
+
+            new Chart(el, {
+                type:'line',
+                data:{
+                    labels,
+                    datasets:[
+                        {label:'Gerçek',data:actual,borderColor:'rgb(59,130,246)',backgroundColor:'rgba(59,130,246,0.1)',fill:true,tension:0.3,pointRadius:2},
+                        {label:'Tahmin',data:predicted,borderColor:'rgb(249,115,22)',borderDash:[5,5],backgroundColor:'rgba(249,115,22,0.08)',fill:true,tension:0.3,pointRadius:3}
+                    ]
+                },
+                options:{
+                    responsive:true, maintainAspectRatio:false,
+                    plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},
+                    scales:{
+                        x:{grid:{display:false},ticks:{font:{size:8},maxTicksLimit:12}},
+                        y:{beginAtZero:true,ticks:{precision:0}}
+                    }
+                }
+            });
+        }
+    }
+}
+</script>

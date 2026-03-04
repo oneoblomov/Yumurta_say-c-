@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="{{ lang }}" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ t.get('app_title', 'Yumurta Sayıcı') }} - Azim Tav</title>
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: "#eff6ff",
+                100: "#dbeafe",
+                200: "#bfdbfe",
+                300: "#93c5fd",
+                400: "#60a5fa",
+                500: "#3b82f6",
+                600: "#2563eb",
+                700: "#1d4ed8",
+                800: "#1e40af",
+                900: "#1e3a8a",
+              },
+              egg: { light: "#fef3c7", DEFAULT: "#f59e0b", dark: "#b45309" },
+            },
+          },
+        },
+      };
+    </script>
+    <!-- Alpine.js -->
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/app.css" />
+  </head>
+  <body class="h-full bg-gray-50 text-gray-800" x-data="app()" x-init="init()">
+    <!-- Mobile Header -->
+    <header
+      class="lg:hidden fixed top-0 inset-x-0 z-50 bg-white border-b border-gray-200 shadow-sm"
+    >
+      <div class="flex items-center justify-between px-4 h-14">
+        <button
+          @click="sidebarOpen=!sidebarOpen"
+          class="p-2 rounded-lg hover:bg-gray-100"
+        >
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <span class="text-lg font-bold text-primary-600">🥚</span>
+          <span
+            class="font-semibold text-sm"
+            x-text="t.app_title || 'Yumurta Sayıcı'"
+          ></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            @click="$refs.alertPanel.classList.toggle('hidden')"
+            class="relative p-2 rounded-lg hover:bg-gray-100"
+          >
+            <i data-lucide="bell" class="w-5 h-5"></i>
+            <span
+              x-show="alertCount>0"
+              class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center"
+              x-text="alertCount"
+            ></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Sidebar Overlay (mobile) -->
+    <div
+      x-show="sidebarOpen"
+      @click="sidebarOpen=false"
+      class="fixed inset-0 bg-black/40 z-40 lg:hidden"
+      x-transition:enter="transition-opacity duration-200"
+      x-transition:leave="transition-opacity duration-200"
+    ></div>
+
+    <!-- Sidebar -->
+    <aside
+      :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+      class="fixed top-0 left-0 z-50 w-64 h-full bg-slate-800 text-white transition-transform duration-200 lg:translate-x-0 lg:z-30 flex flex-col"
+    >
+      <!-- Brand -->
+      <div class="flex items-center gap-3 px-5 h-16 border-b border-slate-700">
+        <span class="text-2xl">🥚</span>
+        <div>
+          <h1
+            class="font-bold text-sm leading-tight"
+            x-text="t.app_title || 'Yumurta Sayıcı'"
+          ></h1>
+          <p class="text-[10px] text-slate-400">Azim Tav v1.0</p>
+        </div>
+      </div>
+
+      <!-- Nav -->
+      <nav class="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        <a
+          href="/dashboard"
+          hx-get="/dashboard"
+          hx-target="#main-content"
+          hx-push-url="true"
+          @click="sidebarOpen=false; currentPage='dashboard'"
+          :class="currentPage==='dashboard' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          <span x-text="t.nav?.dashboard || 'Gösterge Paneli'"></span>
+        </a>
+        <a
+          href="/records"
+          hx-get="/records"
+          hx-target="#main-content"
+          hx-push-url="true"
+          @click="sidebarOpen=false; currentPage='records'"
+          :class="currentPage==='records' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <i data-lucide="database" class="w-4 h-4"></i>
+          <span x-text="t.nav?.records || 'Kayıtlar'"></span>
+        </a>
+        <a
+          href="/stats"
+          hx-get="/stats"
+          hx-target="#main-content"
+          hx-push-url="true"
+          @click="sidebarOpen=false; currentPage='stats'"
+          :class="currentPage==='stats' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+          <span x-text="t.nav?.stats || 'İstatistikler'"></span>
+        </a>
+        <a
+          href="/logs"
+          hx-get="/logs"
+          hx-target="#main-content"
+          hx-push-url="true"
+          @click="sidebarOpen=false; currentPage='logs'"
+          :class="currentPage==='logs' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <i data-lucide="scroll-text" class="w-4 h-4"></i>
+          <span x-text="t.nav?.logs || 'Log Geçmişi'"></span>
+        </a>
+        <a
+          href="/settings"
+          hx-get="/settings"
+          hx-target="#main-content"
+          hx-push-url="true"
+          @click="sidebarOpen=false; currentPage='settings'"
+          :class="currentPage==='settings' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+        >
+          <i data-lucide="settings" class="w-4 h-4"></i>
+          <span x-text="t.nav?.settings || 'Ayarlar'"></span>
+        </a>
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div class="px-4 py-3 border-t border-slate-700">
+        <div class="flex items-center justify-between">
+          <!-- Pipeline Status Indicator -->
+          <div class="flex items-center gap-2">
+            <span
+              :class="status.running ? (status.paused ? 'bg-yellow-400' : 'bg-green-400 animate-pulse') : 'bg-gray-500'"
+              class="w-2.5 h-2.5 rounded-full"
+            ></span>
+            <span
+              class="text-xs text-slate-400"
+              x-text="status.running ? (status.paused ? (t.status?.paused||'Duraklatıldı') : (t.status?.running||'Çalışıyor')) : (t.status?.stopped||'Durduruldu')"
+            ></span>
+          </div>
+          <!-- Language Toggle -->
+          <select
+            @change="setLanguage($event.target.value)"
+            class="text-xs bg-slate-700 border-0 rounded px-1 py-0.5 text-slate-300"
+          >
+            <template x-for="[code, name] in Object.entries(langs)" :key="code">
+              <option
+                :value="code"
+                :selected="lang===code"
+                x-text="name"
+              ></option>
+            </template>
+          </select>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="lg:ml-64 min-h-screen pt-14 lg:pt-0">
+      <!-- Desktop Top Bar -->
+      <header
+        class="hidden lg:flex items-center justify-between px-6 h-14 bg-white border-b border-gray-200 shadow-sm"
+      >
+        <div class="flex items-center gap-4">
+          <h2
+            class="text-lg font-semibold text-gray-700"
+            id="page-title"
+            x-text="t.nav?.[currentPage] || currentPage"
+          ></h2>
+          <!-- Pipeline mini status -->
+          <div
+            class="flex items-center gap-2 text-xs text-gray-500"
+            x-show="status.running"
+          >
+            <span
+              class="w-2 h-2 rounded-full bg-green-400 animate-pulse"
+            ></span>
+            <span>FPS: <strong x-text="status.fps"></strong></span>
+            <span>|</span>
+            <span
+              x-text="(t.common?.active_tracks||'Aktif')+': '+status.active_tracks"
+            ></span>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <!-- Alert Bell -->
+          <button
+            @click="showAlerts=!showAlerts"
+            class="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <i data-lucide="bell" class="w-5 h-5 text-gray-500"></i>
+            <span
+              x-show="alertCount>0"
+              class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"
+              x-text="alertCount"
+            ></span>
+          </button>
+          <!-- Language -->
+          <select
+            @change="setLanguage($event.target.value)"
+            class="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white"
+          >
+            <template x-for="[code, name] in Object.entries(langs)" :key="code">
+              <option
+                :value="code"
+                :selected="lang===code"
+                x-text="name"
+              ></option>
+            </template>
+          </select>
+        </div>
+      </header>
+
+      <!-- Alert Dropdown -->
+      <div
+        x-show="showAlerts"
+        @click.outside="showAlerts=false"
+        x-ref="alertPanel"
+        class="fixed right-4 top-16 w-80 max-h-96 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden"
+        x-transition
+      >
+        <div
+          class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b"
+        >
+          <span
+            class="font-semibold text-sm"
+            x-text="t.alerts?.title || 'Bildirimler'"
+          ></span>
+          <button
+            @click="ackAllAlerts()"
+            class="text-xs text-primary-600 hover:underline"
+            x-text="t.alerts?.ack_all || 'Tümünü okundu yap'"
+          ></button>
+        </div>
+        <div class="overflow-y-auto max-h-72 divide-y divide-gray-100">
+          <template x-for="a in alerts" :key="a.id">
+            <div class="px-4 py-3 hover:bg-gray-50 flex items-start gap-3">
+              <span
+                :class="{
+                        'text-blue-500': a.severity==='info',
+                        'text-yellow-500': a.severity==='warning',
+                        'text-red-500': a.severity==='error' || a.severity==='critical'
+                    }"
+              >
+                <i
+                  :data-lucide="a.severity==='info'?'info':'alert-triangle'"
+                  class="w-4 h-4"
+                ></i>
+              </span>
+              <div class="flex-1 min-w-0">
+                <p
+                  class="text-sm text-gray-700 truncate"
+                  x-text="a.message"
+                ></p>
+                <p
+                  class="text-xs text-gray-400 mt-0.5"
+                  x-text="a.created_at"
+                ></p>
+              </div>
+              <button
+                x-show="!a.acknowledged"
+                @click="ackAlert(a.id)"
+                class="shrink-0 text-xs text-primary-500 hover:underline"
+              >
+                ✓
+              </button>
+            </div>
+          </template>
+          <div
+            x-show="alerts.length===0"
+            class="px-4 py-8 text-center text-gray-400 text-sm"
+          >
+            <span x-text="t.alerts?.empty || 'Bildirim yok'"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast Notification -->
+      <div
+        x-show="toast.show"
+        x-transition
+        class="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg text-white text-sm font-medium"
+        :class="{
+             'bg-green-500': toast.type==='success',
+             'bg-red-500': toast.type==='error',
+             'bg-yellow-500': toast.type==='warning',
+             'bg-blue-500': toast.type==='info'
+         }"
+      >
+        <div class="flex items-center gap-2">
+          <span x-text="toast.message"></span>
+          <button
+            @click="toast.show=false"
+            class="ml-2 opacity-70 hover:opacity-100"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Page Content -->
+      <main id="main-content" class="p-4 lg:p-6">
+        {% if page_content is defined %} {% include page_content %} {% endif %}
+      </main>
+    </div>
+
+    <!-- App Init Data -->
+    <script>
+      window.__appInit = {
+          lang: "{{ lang }}",
+          langs: {{ langs|tojson|safe }},
+          t: {{ t|tojson|safe }}
+      };
+    </script>
+    <!-- App JS -->
+    <script src="/static/js/app.js"></script>
+    <script>
+      // Init Lucide icons
+      document.addEventListener("DOMContentLoaded", () => lucide.createIcons());
+      // Re-init after HTMX swap
+      document.body.addEventListener("htmx:afterSwap", () => {
+        lucide.createIcons();
+        if (typeof initPageCharts === "function") initPageCharts();
+      });
+    </script>
+  </body>
+</html>

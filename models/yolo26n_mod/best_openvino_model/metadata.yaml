@@ -1,6 +1,6 @@
 description: Ultralytics YOLO26n model trained on /content/Egg-6/data.yaml
 author: Ultralytics
-date: '2026-03-03T23:36:51.535384'
+date: '2026-03-04T08:20:50.165700'
 version: 8.4.19
 license: AGPL-3.0 License (https://ultralytics.com/license)
 docs: https://docs.ultralytics.com
@@ -8,8 +8,8 @@ stride: 32
 task: detect
 batch: 1
 imgsz:
-- 320
-- 320
+- 640
+- 640
 names:
   0: egg
 args:

@@ -30,6 +30,10 @@ class TrackManager:
         self.counter_cfg = counter_cfg
         self.trail_length = trail_length
 
+        # geometry information filled by pipeline
+        self._frame_height: Optional[int] = None
+        self._line_y: Optional[int] = None
+
         # ID -> deque[(cx, cy)]
         self.trails: Dict[int, deque] = defaultdict(
             lambda: deque(maxlen=self.trail_length)
@@ -54,6 +58,13 @@ class TrackManager:
     def update(self, detections: list) -> list:
         """
         Frame algılamalarını işle + spatial deduplication uygula.
+
+        Pipeline init aşamasında ``set_frame_height`` çağrılmış olmalı;
+        ayrıca çizgi konumu değişirse ``set_line_y`` çağrısına ihtiyaç var.
+        Bu bilgiler spatial dedup fonksiyonuna çizgiden geçmiş olup olmadığını
+        söyleyebilmek için gereklidir. (Aksi halde ROI giriş/çıkışında yeni
+        tracklar eski sayılmış ID'lerle eşleşiyor, hatalı "ROI sayıldı"
+        durumuna yol açıyor.)
         """
         self._frame_count += 1
         current_active = set()
@@ -129,6 +140,10 @@ class TrackManager:
         ByteTrack bazen aynı yumurtaya yeni ID atar (occlusion, frame drop).
         Bu fonksiyon mesafe kontrolü ile çift sayımı engeller.
 
+        Ek: eğer ``_line_y`` mevcutsa, yeni tespit hâlâ sayım çizgisinin
+        aynı tarafındaysa eşleşme yapılmaz. Böylece ROI giriş/çıkışındaki
+        yanlış "sayılmış" görüntüsü önlenir.
+
         Returns:
             Eşleşen eski ID (varsa), None (yoksa)
         """
@@ -137,6 +152,8 @@ class TrackManager:
 
         best_match = None
         best_dist = float('inf')
+
+        line_y = self._line_y
 
         for old_tid, (ox, oy) in self._lost_track_positions.items():
             # Çok eski kayıp ID'leri atla
@@ -147,6 +164,17 @@ class TrackManager:
             # Sadece sayılmış ID'lerle karşılaştır
             if old_tid not in self.counted_ids:
                 continue
+
+            # çizgi bilgiği varsa, yeni tespit çizginin aynı tarafındaysa es geç
+            if line_y is not None:
+                if self.counter_cfg.direction == "top_to_bottom":
+                    if cy < line_y and oy >= line_y:
+                        # yeni yukarıda eski aşağıda -> henüz çizgiyi geçmemiş
+                        continue
+                elif self.counter_cfg.direction == "bottom_to_top":
+                    if cy > line_y and oy <= line_y:
+                        continue
+                # 'both' yönünde herhangi bir taraf kabul edilir
 
             dist = math.hypot(cx - ox, cy - oy)
             if dist < radius and dist < best_dist:
@@ -216,6 +244,18 @@ class TrackManager:
     @property
     def frame_count(self) -> int:
         return self._frame_count
+
+    def set_frame_height(self, height: int):
+        """Pipeline tarafından çağrılır; kare yüksekliğini bildirir.
+
+        ``_line_y`` çağrıldığında da güncellenir.
+        """
+        self._frame_height = height
+        self._line_y = int(height * self.counter_cfg.line_position)
+
+    def set_line_y(self, line_y: int):
+        """Çizgi pozisyonu değiştiğinde pipeline bu metodu çağırır."""
+        self._line_y = line_y
 
     def _cleanup_stale_tracks(self):
         """

@@ -1,0 +1,384 @@
+<!-- partials/records.html - Kayıtlar -->
+<div x-data="records()" x-init="init()">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h2
+      class="text-lg font-bold text-gray-800"
+      x-text="t.records?.title || 'Kayıtlar'"
+    ></h2>
+    <div class="flex items-center gap-2">
+      <!-- Export Buttons -->
+      <div
+        class="flex items-center gap-1 bg-white rounded-lg border border-gray-200 shadow-sm p-1"
+      >
+        <a
+          :href="'/api/export/csv'+(selectedDate?'?date_str='+selectedDate:'')"
+          class="px-3 py-1.5 text-xs font-medium rounded-md hover:bg-gray-50 text-gray-600 transition-colors"
+        >
+          CSV
+        </a>
+        <a
+          :href="'/api/export/excel'+(selectedDate?'?date_str='+selectedDate:'')"
+          class="px-3 py-1.5 text-xs font-medium rounded-md hover:bg-gray-50 text-gray-600 transition-colors"
+        >
+          Excel
+        </a>
+        <a
+          :href="'/api/export/pdf'+(selectedDate?'?date_str='+selectedDate:'')"
+          class="px-3 py-1.5 text-xs font-medium rounded-md hover:bg-gray-50 text-gray-600 transition-colors"
+        >
+          PDF
+        </a>
+      </div>
+      <!-- Import -->
+      <label
+        class="px-3 py-2 bg-primary-50 text-primary-600 text-xs font-medium rounded-lg cursor-pointer hover:bg-primary-100 transition-colors border border-primary-200"
+      >
+        <i data-lucide="upload" class="w-3.5 h-3.5 inline mr-1"></i>
+        <span x-text="t.records?.import || 'İçe Aktar'"></span>
+        <input
+          type="file"
+          accept=".csv"
+          class="hidden"
+          @change="importCSV($event)"
+        />
+      </label>
+    </div>
+  </div>
+
+  <!-- Tabs: Daily / Sessions -->
+  <div class="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
+    <button
+      @click="tab='daily'"
+      :class="tab==='daily'?'bg-white shadow-sm text-gray-800':'text-gray-500 hover:text-gray-700'"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      x-text="t.records?.daily || 'Günlük Özet'"
+    ></button>
+    <button
+      @click="tab='sessions'"
+      :class="tab==='sessions'?'bg-white shadow-sm text-gray-800':'text-gray-500 hover:text-gray-700'"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      x-text="t.records?.sessions || 'Oturumlar'"
+    ></button>
+  </div>
+
+  <!-- Daily Summaries Table -->
+  <div
+    x-show="tab==='daily'"
+    class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+  >
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.date || 'Tarih'"
+            ></th>
+            <th
+              class="text-right px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.count || 'Sayım'"
+            ></th>
+            <th
+              class="text-right px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.sessions_col || 'Oturum'"
+            ></th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.first || 'İlk Sayım'"
+            ></th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.last || 'Son Sayım'"
+            ></th>
+            <th
+              class="text-center px-4 py-3 font-semibold text-gray-600"
+              x-text="t.common?.actions || 'İşlem'"
+            ></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for s in summaries %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-4 py-3 font-medium">{{ s.date }}</td>
+            <td class="px-4 py-3 text-right">
+              <span
+                class="bg-primary-50 text-primary-700 px-2 py-0.5 rounded-full text-xs font-bold"
+              >
+                {{ s.total_count }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-right text-gray-500">
+              {{ s.session_count }}
+            </td>
+            <td class="px-4 py-3 text-gray-500 text-xs">
+              {{ s.first_count_at or '-' }}
+            </td>
+            <td class="px-4 py-3 text-gray-500 text-xs">
+              {{ s.last_count_at or '-' }}
+            </td>
+            <td class="px-4 py-3 text-center">
+              <div class="flex justify-center gap-1">
+                <button
+                  @click="selectedDate='{{ s.date }}'; viewEvents('{{ s.date }}')"
+                  class="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition-colors"
+                  title="Detay"
+                >
+                  <i data-lucide="eye" class="w-4 h-4"></i>
+                </button>
+                <button
+                  @click="resetDay('{{ s.date }}')"
+                  class="p-1.5 rounded-lg hover:bg-yellow-50 text-yellow-500 transition-colors"
+                  title="Sıfırla"
+                >
+                  <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                </button>
+                <button
+                  @click="deleteDay('{{ s.date }}')"
+                  class="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
+                  title="Sil"
+                >
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %} {% if not summaries %}
+          <tr>
+            <td colspan="6" class="px-4 py-12 text-center text-gray-400">
+              <i
+                data-lucide="database"
+                class="w-8 h-8 mx-auto mb-2 opacity-30"
+              ></i>
+              <span x-text="t.records?.empty || 'Kayıt bulunamadı'"></span>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Sessions Table -->
+  <div
+    x-show="tab==='sessions'"
+    class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+  >
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-semibold text-gray-600">ID</th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.started || 'Başlangıç'"
+            ></th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.ended || 'Bitiş'"
+            ></th>
+            <th
+              class="text-left px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.source_col || 'Kaynak'"
+            ></th>
+            <th
+              class="text-right px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.count || 'Sayım'"
+            ></th>
+            <th
+              class="text-center px-4 py-3 font-semibold text-gray-600"
+              x-text="t.records?.status || 'Durum'"
+            ></th>
+            <th
+              class="text-center px-4 py-3 font-semibold text-gray-600"
+              x-text="t.common?.actions || 'İşlem'"
+            ></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for s in sessions %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-4 py-3 font-mono text-xs text-gray-400">
+              #{{ s.id }}
+            </td>
+            <td class="px-4 py-3 text-xs">{{ s.started_at }}</td>
+            <td class="px-4 py-3 text-xs text-gray-500">
+              {{ s.ended_at or '-' }}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500">{{ s.source }}</td>
+            <td class="px-4 py-3 text-right font-bold">{{ s.total_count }}</td>
+            <td class="px-4 py-3 text-center">
+              {% if s.status == 'running' %}
+              <span
+                class="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"
+                ></span>
+                Çalışıyor
+              </span>
+              {% elif s.status == 'paused' %}
+              <span
+                class="px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full text-xs font-medium"
+                >Duraklatıldı</span
+              >
+              {% elif s.status == 'error' %}
+              <span
+                class="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-xs font-medium"
+                >Hata</span
+              >
+              {% else %}
+              <span
+                class="px-2 py-0.5 bg-gray-50 text-gray-500 rounded-full text-xs font-medium"
+                >Tamamlandı</span
+              >
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-center">
+              <button
+                @click="deleteSession({{ s.id }})"
+                class="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
+              >
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div
+      class="flex items-center justify-center gap-2 px-4 py-3 border-t border-gray-100"
+    >
+      {% for p in range(1, total_pages+1) %}
+      <a
+        href="/records?page={{ p }}"
+        hx-get="/records?page={{ p }}"
+        hx-target="#main-content"
+        hx-push-url="true"
+        class="px-3 py-1 rounded-lg text-sm {{ 'bg-primary-500 text-white' if p == page_num else 'text-gray-600 hover:bg-gray-100' }}"
+      >
+        {{ p }}
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Event Detail Modal -->
+  <div
+    x-show="showEventModal"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    x-transition
+    @keydown.escape.window="showEventModal=false"
+  >
+    <div class="fixed inset-0 bg-black/40" @click="showEventModal=false"></div>
+    <div
+      class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
+    >
+      <div
+        class="flex items-center justify-between px-6 py-4 border-b border-gray-100"
+      >
+        <h3
+          class="font-bold text-gray-800"
+          x-text="(t.records?.events_for||'Sayım olayları:')+' '+selectedDate"
+        ></h3>
+        <button
+          @click="showEventModal=false"
+          class="p-1 rounded-lg hover:bg-gray-100"
+        >
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="overflow-y-auto max-h-96 p-4">
+        <table class="w-full text-xs">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left">Zaman</th>
+              <th class="px-3 py-2 text-left">Track</th>
+              <th class="px-3 py-2 text-right">CX,CY</th>
+              <th class="px-3 py-2 text-right">Güven</th>
+              <th class="px-3 py-2 text-right">Toplam</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            <template x-for="e in modalEvents" :key="e.id">
+              <tr class="hover:bg-gray-50">
+                <td class="px-3 py-2" x-text="e.timestamp"></td>
+                <td
+                  class="px-3 py-2 font-mono"
+                  x-text="'#'+(e.track_id||'')"
+                ></td>
+                <td
+                  class="px-3 py-2 text-right text-gray-500"
+                  x-text="e.cx+','+e.cy"
+                ></td>
+                <td
+                  class="px-3 py-2 text-right"
+                  x-text="((e.confidence||0)*100).toFixed(0)+'%'"
+                ></td>
+                <td
+                  class="px-3 py-2 text-right font-bold"
+                  x-text="e.running_total"
+                ></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function records() {
+    return {
+      tab: "daily",
+      selectedDate: "",
+      showEventModal: false,
+      modalEvents: [],
+      async viewEvents(dateStr) {
+        const r = await fetch("/api/events?date_str=" + dateStr + "&limit=500");
+        this.modalEvents = await r.json();
+        this.showEventModal = true;
+      },
+      async resetDay(dateStr) {
+        if (
+          !confirm("Bu günün sayımlarını sıfırlamak istediğinize emin misiniz?")
+        )
+          return;
+        await fetch("/api/daily/" + dateStr + "/reset", { method: "POST" });
+        location.reload();
+      },
+      async deleteDay(dateStr) {
+        if (
+          !confirm("Bu günün TÜM verilerini silmek istediğinize emin misiniz?")
+        )
+          return;
+        await fetch("/api/daily/" + dateStr, { method: "DELETE" });
+        location.reload();
+      },
+      async deleteSession(id) {
+        if (!confirm("Bu oturumu silmek istediğinize emin misiniz?")) return;
+        await fetch("/api/sessions/" + id, { method: "DELETE" });
+        location.reload();
+      },
+      async importCSV(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await fetch("/api/import/csv", { method: "POST", body: fd });
+        const d = await r.json();
+        if (d.ok) {
+          showToast(d.imported + " kayıt içe aktarıldı", "success");
+          location.reload();
+        } else showToast("İçe aktarma hatası", "error");
+      },
+      init() {},
+    };
+  }
+</script>

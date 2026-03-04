@@ -271,8 +271,14 @@ class EggCountingPipeline:
             self.cfg.tracker, self.cfg.counter,
             trail_length=self.cfg.pipeline.trail_length
         )
+        # inform tracker about frame height now (line_y will follow after counting_line created)
+        if self._frame_height:
+            self._track_manager.set_frame_height(self._frame_height)
 
         self._counting_line = CountingLine(self.cfg.counter, self._frame_height)
+        # after counting line exists we can send its y-coordinate
+        if self._track_manager:
+            self._track_manager.set_line_y(self._counting_line.line_y)
         self._visualizer = Visualizer(self.cfg.visualizer, self.cfg.counter)
         self._logger = CountLogger(self.cfg.logger)
 
@@ -483,11 +489,15 @@ class EggCountingPipeline:
         elif key == ord("+") or key == ord("="):
             pos = self._counting_line.cfg.line_position - 0.02
             self._counting_line.update_line_position(pos)
+            if self._track_manager:
+                self._track_manager.set_line_y(self._counting_line.line_y)
             print(f"[PIPELINE] Çizgi: y={self._counting_line.line_y}")
 
         elif key == ord("-"):
             pos = self._counting_line.cfg.line_position + 0.02
             self._counting_line.update_line_position(pos)
+            if self._track_manager:
+                self._track_manager.set_line_y(self._counting_line.line_y)
             print(f"[PIPELINE] Çizgi: y={self._counting_line.line_y}")
 
         elif key == ord("s"):

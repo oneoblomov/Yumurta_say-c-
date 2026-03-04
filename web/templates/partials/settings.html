@@ -1,0 +1,574 @@
+<!-- partials/settings.html - Ayarlar -->
+<div x-data="settingsPage()" x-init="init()">
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <h2
+      class="text-lg font-bold text-gray-800"
+      x-text="t.settings?.title || 'Ayarlar'"
+    ></h2>
+    <button
+      @click="saveAll()"
+      class="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+    >
+      <i data-lucide="save" class="w-4 h-4"></i>
+      <span x-text="t.settings?.save || 'Kaydet'"></span>
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex flex-wrap gap-1 mb-6 bg-gray-100 rounded-lg p-1">
+    <template x-for="tab in tabs" :key="tab.id">
+      <button
+        @click="activeTab=tab.id"
+        :class="activeTab===tab.id?'bg-white shadow-sm text-gray-800':'text-gray-500 hover:text-gray-700'"
+        class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+        x-text="tab.label"
+      ></button>
+    </template>
+  </div>
+
+  <!-- Camera Settings -->
+  <div x-show="activeTab==='camera'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="camera" class="w-5 h-5 text-primary-500"></i>
+        <span x-text="t.settings?.camera || 'Kamera Ayarları'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.camera_source || 'Kamera Kaynağı'"
+          ></label>
+          <input
+            x-model="s.camera_source"
+            type="text"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"
+            placeholder="0 veya /dev/video0"
+          />
+          <p class="text-xs text-gray-400 mt-1">
+            0 = varsayılan kamera, veya video dosya yolu
+          </p>
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.resolution || 'Çözünürlük'"
+          ></label>
+          <div class="flex gap-2">
+            <input
+              x-model="s.camera_width"
+              type="number"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+              placeholder="640"
+            />
+            <span class="py-2 text-gray-400">×</span>
+            <input
+              x-model="s.camera_height"
+              type="number"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+              placeholder="480"
+            />
+          </div>
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.stream_q || 'Akış Kalitesi (1-100)'"
+          ></label>
+          <input
+            x-model="s.stream_quality"
+            type="range"
+            min="10"
+            max="100"
+            step="5"
+            class="w-full accent-primary-500"
+          />
+          <span
+            class="text-xs text-gray-500"
+            x-text="s.stream_quality+'%'"
+          ></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detection Settings -->
+  <div x-show="activeTab==='detector'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="scan" class="w-5 h-5 text-green-500"></i>
+        <span x-text="t.settings?.detection || 'Algılama Ayarları'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.model_path || 'Model Yolu'"
+          ></label>
+          <input
+            x-model="s.model_path"
+            type="text"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+          />
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.imgsz || 'Inference Boyutu'"
+          ></label>
+          <select
+            x-model="s.imgsz"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+          >
+            <option value="320">320 (Hızlı)</option>
+            <option value="480">480 (Dengeli)</option>
+            <option value="640">640 (Kaliteli)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span x-text="t.settings?.conf || 'Güven Eşiği'"></span>
+            <span
+              class="text-primary-500 font-mono ml-1"
+              x-text="s.conf_threshold"
+            ></span>
+          </label>
+          <input
+            x-model="s.conf_threshold"
+            type="range"
+            min="0.05"
+            max="0.95"
+            step="0.05"
+            class="w-full accent-primary-500"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span x-text="t.settings?.iou || 'IoU Eşiği'"></span>
+            <span
+              class="text-primary-500 font-mono ml-1"
+              x-text="s.iou_threshold"
+            ></span>
+          </label>
+          <input
+            x-model="s.iou_threshold"
+            type="range"
+            min="0.1"
+            max="0.9"
+            step="0.05"
+            class="w-full accent-primary-500"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Counter Settings -->
+  <div x-show="activeTab==='counter'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i
+          data-lucide="git-commit-horizontal"
+          class="w-5 h-5 text-yellow-500"
+        ></i>
+        <span x-text="t.settings?.counter || 'Sayım Ayarları'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span x-text="t.settings?.line_pos || 'Çizgi Pozisyonu'"></span>
+            <span
+              class="text-primary-500 font-mono ml-1"
+              x-text="(s.line_position*100).toFixed(0)+'%'"
+            ></span>
+          </label>
+          <input
+            x-model="s.line_position"
+            type="range"
+            min="0.1"
+            max="0.9"
+            step="0.05"
+            class="w-full accent-yellow-500"
+          />
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.direction || 'Yön'"
+          ></label>
+          <select
+            x-model="s.direction"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
+          >
+            <option value="top_to_bottom">Yukarıdan Aşağı</option>
+            <option value="bottom_to_top">Aşağıdan Yukarı</option>
+            <option value="both">Her İki Yön</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span x-text="t.settings?.roi_top || 'ROI Üst'"></span>
+            <span
+              class="text-primary-500 font-mono ml-1"
+              x-text="(s.roi_top*100).toFixed(0)+'%'"
+            ></span>
+          </label>
+          <input
+            x-model="s.roi_top"
+            type="range"
+            min="0.0"
+            max="0.9"
+            step="0.05"
+            class="w-full accent-orange-500"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span x-text="t.settings?.roi_bottom || 'ROI Alt'"></span>
+            <span
+              class="text-primary-500 font-mono ml-1"
+              x-text="(s.roi_bottom*100).toFixed(0)+'%'"
+            ></span>
+          </label>
+          <input
+            x-model="s.roi_bottom"
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.05"
+            class="w-full accent-orange-500"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tracker Settings -->
+  <div x-show="activeTab==='tracker'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="route" class="w-5 h-5 text-purple-500"></i>
+        <span x-text="t.settings?.tracker || 'Takip Ayarları'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.tracker_type || 'Tracker Tipi'"
+          ></label>
+          <select
+            x-model="s.tracker_type"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+          >
+            <option value="bytetrack">ByteTrack</option>
+            <option value="botsort">BotSORT</option>
+          </select>
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.track_buffer || 'Track Buffer (frame)'"
+          ></label>
+          <input
+            x-model="s.track_buffer"
+            type="number"
+            min="10"
+            max="300"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span
+              x-text="t.settings?.match_thresh || 'Eşleştirme Eşiği'"
+            ></span>
+            <span
+              class="text-primary-500 font-mono ml-1"
+              x-text="s.match_thresh"
+            ></span>
+          </label>
+          <input
+            x-model="s.match_thresh"
+            type="range"
+            min="0.3"
+            max="0.99"
+            step="0.05"
+            class="w-full accent-purple-500"
+          />
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.post_cross_drop || 'Sayıldıktan Bırakma (frame)'"
+          ></label>
+          <input
+            x-model="s.post_cross_drop"
+            type="number"
+            min="0"
+            max="100"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+            placeholder="0 = kapalı"
+          />
+          <p class="text-xs text-gray-400 mt-1">0 = devre dışı</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preprocessing Settings -->
+  <div x-show="activeTab==='preprocessing'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="image" class="w-5 h-5 text-blue-500"></i>
+        <span x-text="t.settings?.preprocessing || 'Ön İşleme'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span x-text="t.settings?.enable_clahe || 'CLAHE Ön İşleme'"></span>
+          </label>
+          <input
+            x-model="s.enable_clahe"
+            type="checkbox"
+            class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500"
+          />
+        </div>
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">
+            <span
+              x-text="t.settings?.enable_stabilization || 'Titreşim Stabilizasyonu'"
+            ></span>
+          </label>
+          <input
+            x-model="s.enable_stabilization"
+            type="checkbox"
+            class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500"
+          />
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.crop_ud || 'Üst-Alt Kırpma (%)'"
+          ></label>
+          <input
+            x-model="s.crop_ud"
+            type="number"
+            min="0"
+            max="90"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+            placeholder="0 = kırpma yok"
+          />
+          <p class="text-xs text-gray-400 mt-1">Üst ve alt toplam yüzde</p>
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.crop_lr || 'Sol-Sağ Kırpma (%)'"
+          ></label>
+          <input
+            x-model="s.crop_lr"
+            type="number"
+            min="0"
+            max="90"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+            placeholder="0 = kırpma yok"
+          />
+          <p class="text-xs text-gray-400 mt-1">Sol ve sağ toplam yüzde</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Goals Settings -->
+  <div x-show="activeTab==='goals'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="target" class="w-5 h-5 text-red-500"></i>
+        <span x-text="t.settings?.goals || 'Hedefler'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.daily_goal || 'Günlük Hedef'"
+          ></label>
+          <input
+            x-model="s.daily_goal"
+            type="number"
+            min="0"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+            placeholder="0 = kapalı"
+          />
+          <p class="text-xs text-gray-400 mt-1">0 = hedef kapalı</p>
+        </div>
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.weekly_goal || 'Haftalık Hedef'"
+          ></label>
+          <input
+            x-model="s.weekly_goal"
+            type="number"
+            min="0"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+            placeholder="0 = kapalı"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Display Settings -->
+  <div x-show="activeTab==='display'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="palette" class="w-5 h-5 text-pink-500"></i>
+        <span x-text="t.settings?.display || 'Görünüm'"></span>
+      </h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label
+            class="block text-sm text-gray-600 mb-1"
+            x-text="t.settings?.language || 'Dil'"
+          ></label>
+          <select
+            x-model="s.language"
+            @change="setLang(s.language)"
+            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+          >
+            <option value="tr">Türkçe</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Update System -->
+  <div x-show="activeTab==='system'" class="space-y-4">
+    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+        <i data-lucide="refresh-cw" class="w-5 h-5 text-cyan-500"></i>
+        <span x-text="t.settings?.updates || 'Güncelleme Sistemi'"></span>
+      </h3>
+
+      <!-- Current Version -->
+      <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+        <p class="text-sm">
+          <span
+            class="font-medium"
+            x-text="t.settings?.current_ver || 'Mevcut Sürüm:'"
+          ></span>
+          <span class="font-mono text-primary-600">v1.0.0</span>
+        </p>
+      </div>
+
+      <!-- Version History -->
+      <h4
+        class="text-sm font-medium text-gray-600 mb-2"
+        x-text="t.settings?.version_history || 'Sürüm Geçmişi'"
+      ></h4>
+      {% if versions %}
+      <div class="space-y-2">
+        {% for v in versions %}
+        <div
+          class="flex items-center justify-between p-3 rounded-lg border {{ 'border-green-200 bg-green-50' if v.is_active else 'border-gray-200' }}"
+        >
+          <div>
+            <span class="font-mono text-sm font-medium">v{{ v.version }}</span>
+            {% if v.is_active %}
+            <span
+              class="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full"
+              >Aktif</span
+            >
+            {% endif %}
+            <p class="text-xs text-gray-500 mt-0.5">{{ v.installed_at }}</p>
+            {% if v.changelog %}
+            <p class="text-xs text-gray-400 mt-0.5">{{ v.changelog }}</p>
+            {% endif %}
+          </div>
+          {% if not v.is_active %}
+          <button
+            @click="rollback({{ v.id }})"
+            class="px-3 py-1.5 bg-orange-50 text-orange-600 text-xs rounded-lg hover:bg-orange-100 transition-colors font-medium"
+          >
+            <i data-lucide="undo-2" class="w-3.5 h-3.5 inline mr-1"></i>
+            Geri Al
+          </button>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-gray-400 text-sm">Sürüm geçmişi bulunmuyor.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  function settingsPage() {
+      return {
+          activeTab: 'camera',
+          tabs: [
+              {id:'camera', label:'Kamera'},
+              {id:'detector', label:'Algılama'},
+              {id:'counter', label:'Sayım'},
+              {id:'tracker', label:'Takip'},
+              {id:'preprocessing', label:'Ön İşleme'},
+              {id:'goals', label:'Hedefler'},
+              {id:'display', label:'Görünüm'},
+              {id:'system', label:'Sistem'},
+          ],
+          s: {{ settings|tojson|safe }},
+          async init() {
+              // Ensure numeric fields parse correctly
+              ['line_position','roi_top','roi_bottom','conf_threshold','iou_threshold','match_thresh'].forEach(k => {
+                  if (this.s[k]) this.s[k] = parseFloat(this.s[k]);
+              });
+              ['camera_width','camera_height','imgsz','track_buffer','daily_goal','weekly_goal','stream_quality','post_cross_drop','crop_ud','crop_lr'].forEach(k => {
+                  if (this.s[k]) this.s[k] = parseInt(this.s[k]);
+              });
+              ['enable_clahe','enable_stabilization'].forEach(k => {
+                  if (this.s[k]) this.s[k] = this.s[k] === '1' || this.s[k] === true;
+              });
+          },
+          async saveAll() {
+              const body = {};
+              Object.entries(this.s).forEach(([k,v]) => body[k] = String(v));
+              const r = await fetch('/api/settings',{
+                  method:'POST',
+                  headers:{'Content-Type':'application/json'},
+                  body: JSON.stringify(body)
+              });
+              const d = await r.json();
+              if (d.ok) {
+                  // Also save goals
+                  if (parseInt(this.s.daily_goal) >= 0) {
+                      await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
+                          body:JSON.stringify({type:'daily',target:parseInt(this.s.daily_goal)})});
+                  }
+                  if (parseInt(this.s.weekly_goal) >= 0) {
+                      await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
+                          body:JSON.stringify({type:'weekly',target:parseInt(this.s.weekly_goal)})});
+                  }
+                  showToast(this.t?.settings?.saved || 'Ayarlar kaydedildi','success');
+              } else showToast('Kaydetme hatası','error');
+          },
+          async setLang(lang) {
+              await fetch('/api/settings/language',{
+                  method:'POST',
+                  headers:{'Content-Type':'application/json'},
+                  body: JSON.stringify({language: lang})
+              });
+              location.reload();
+          },
+          async rollback(vid) {
+              if (!confirm('Bu sürüme geri dönmek istediğinize emin misiniz?')) return;
+              await fetch('/api/versions/'+vid+'/rollback',{method:'POST'});
+              showToast('Sürüm geri alındı','success');
+              location.reload();
+          }
+      }
+  }
+</script>

@@ -109,6 +109,8 @@ class VisualizerConfig:
     enable_label_bg: bool = False         # RPi5: Kapalı (her etiket için frame.copy())
     enable_count_flash: bool = True       # Sayıldığında +1 efekti
 
+    headless: bool = False                # Web arayüzü için HUD gizle
+
 
 @dataclass
 class PreprocessorConfig:
