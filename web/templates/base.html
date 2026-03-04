@@ -42,7 +42,11 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/app.css" />
+    <!-- use request.url_for so the host/port comes from the request (avoids "localhost" issues) -->
+    <link
+      rel="stylesheet"
+      href="{{ request.url_for('static', path='css/app.css') }}"
+    />
   </head>
   <body class="h-full bg-gray-50 text-gray-800" x-data="app()" x-init="init()">
     <!-- Mobile Header -->
@@ -358,7 +362,7 @@
       };
     </script>
     <!-- App JS -->
-    <script src="/static/js/app.js"></script>
+    <script src="{{ request.url_for('static', path='js/app.js') }}"></script>
     <script>
       // Init Lucide icons
       document.addEventListener("DOMContentLoaded", () => lucide.createIcons());
