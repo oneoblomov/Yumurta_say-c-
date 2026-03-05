@@ -26,7 +26,7 @@ class DetectorConfig:
     model_path: str = "models/yolo26s_mod/best.pt"
     imgsz: int = 480                      # RPi5: 480 dengeli (640 ağır, 320 düşük kalite)
     conf_threshold: float = 0.30          # DÜŞÜK: %99.9 recall için kaçırılan yumurta olmasın
-    iou_threshold: float = 0.45           # NMS IoU (sıkışık yumurtalar için)
+    iou_threshold: float = 0.35           # NMS IoU: 0.35 biriçimiş yumurtalarda daha iyi ayırım
     max_det: int = 200
     device: str = ""                      # "" = auto
     half: bool = False                    # RPi5 CPU -> FP16 yok
@@ -44,8 +44,13 @@ class DetectorConfig:
 @dataclass
 class TrackerConfig:
     """
-    ByteTrack takip parametreleri.
+    ByteTrack/BotSORT takip parametreleri.
     Bu değerler özel YAML dosyasına yazılır; varsayılan bytetrack.yaml KULLANILMAZ.
+
+    tracker_type seçenekleri:
+      - bytetrack : Standart hızlı ByteTrack
+      - botsort   : Global hareket düzelme + GMC (titreşim toleranslı)
+      - dense     : Bitişik yumurtalar için optimize ByteTrack (düşük eşik, yüksek tolerans)
     """
     tracker_type: str = "bytetrack"
 
@@ -117,7 +122,7 @@ class PreprocessorConfig:
     """RPi5 hafif ön işleme. Stabilizasyon ve denoise varsayılan KAPALI."""
     enable_clahe: bool = True
     clahe_clip_limit: float = 2.5
-    clahe_grid_size: Tuple[int, int] = (4, 4)  # 4x4 daha hızlı
+    clahe_grid_size: Tuple[int, int] = (4, 4)  # 4x4 kalite/hız dengesi
 
     enable_denoise: bool = False          # ~50ms/frame, RPi5'te kullanma
     denoise_strength: int = 3
@@ -126,7 +131,7 @@ class PreprocessorConfig:
     stabilization_smoothing: int = 5
 
     adaptive_brightness: bool = True
-    brightness_check_interval: int = 5    # Her 5 frame'de bir (her frame değil)
+    brightness_check_interval: int = 10   # Her 10 frame'de bir (~3 kat daha verimli)
 
 
 @dataclass

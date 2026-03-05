@@ -21,6 +21,12 @@ def _create_custom_tracker_yaml(cfg: TrackerConfig) -> str:
     parametreler (track_buffer, match_thresh vb.) yok sayılıyordu.
     Bu fonksiyon parametreleri gerçek YAML'a yazar.
 
+    tracker_type destekleri:
+      - bytetrack : Standart hızlı ByteTrack
+      - botsort   : Global hareket düzeltme + GMC (titreşim toleranslı)
+      - dense     : Bitişik/yakın yumurtalar için optimize ByteTrack
+                    (düşük eşikler, yüksek buffer, gevşek eşleşme)
+
     Returns:
         Oluşturulan YAML dosya yolu
     """
@@ -34,24 +40,49 @@ track_buffer: {cfg.track_buffer}
 match_thresh: {cfg.match_thresh}
 fuse_score: {str(cfg.fuse_score).lower()}
 """
+    elif cfg.tracker_type == "dense":
+        # Bitişik/yakın yumurtalar için özel ByteTrack:
+        # - Düşük high_thresh: kısmen örtüşen yumurtaları kaçırma
+        # - Çok düşük low_thresh: ikinci aşama eşleşme spektrumu geniş
+        # - Gevşek match_thresh: yumurtalar birbirini geçince IoU düşer, yine de eşleş
+        # - Yüksek buffer: geçici okluzyondan sonra ID kaybetme
+        yaml_content = f"""# Yoğun/Bitişik Yumurta - Optimize ByteTrack - Yumurta Sayıcı
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.03
+new_track_thresh: 0.30
+track_buffer: {max(cfg.track_buffer, 120)}
+match_thresh: 0.70
+fuse_score: true
+"""
     else:  # botsort
+        # BotSORT: gmc_method ZORUNLU, fuse_score ByteTrack'e özgüdür.
+        # track_buffer: 0 → track'ler anında ölür; minimum 30 frame zorunlu.
+        # gmc_method: sparseOptFlow → RPi5'te ağır; 'orb' daha hafif,
+        #   tamamen devre dışı için 'sof' kullan.
+        safe_buffer = max(cfg.track_buffer, 30)  # hiçbir zaman 0 olmamalı
         yaml_content = f"""# Özel BotSORT konfigürasyonu - Yumurta Sayıcı
+# NOT: BotSORT = ByteTrack + Global Motion Compensation (GMC)
+# fuse_score BotSORT'ta dikkate ALINMAZ ama bazı Ultralytics sürümleri bekler.
 tracker_type: botsort
 track_high_thresh: {cfg.track_high_thresh}
 track_low_thresh: {cfg.track_low_thresh}
 new_track_thresh: {cfg.new_track_thresh}
-track_buffer: {cfg.track_buffer}
+track_buffer: {safe_buffer}
 match_thresh: {cfg.match_thresh}
-fuse_score: {str(cfg.fuse_score).lower()}
+fuse_score: false
 proximity_thresh: 0.5
 appearance_thresh: 0.25
 with_reid: false
+gmc_method: orb
 """
 
     # Proje dizininde kalıcı dosya oluştur
     yaml_dir = Path(__file__).resolve().parent.parent / "tracker_configs"
     yaml_dir.mkdir(exist_ok=True)
-    yaml_path = yaml_dir / f"custom_{cfg.tracker_type}.yaml"
+    # "dense" tipi de bytetrack tabanlı olduğu için ayrı dosya adı
+    safe_name = cfg.tracker_type.replace(" ", "_")
+    yaml_path = yaml_dir / f"custom_{safe_name}.yaml"
 
     with open(yaml_path, "w") as f:
         f.write(yaml_content)
@@ -143,8 +174,42 @@ class EggDetector:
                 verbose=False,
             )
             return results[0] if results else None
-        except (IndexError, RuntimeError) as e:
-            # Tracker yeniden başlatma sırasındaki geçici hata - sonraki frame normal
+        except IndexError as e:
+            # Ultralytics bug: iç trackers[] listesi bozulunca sürekli IndexError.
+            # persist=False ile sadece bu frame'i kurtarmak yetmiyor —
+            # bir sonraki frame persist=True ile gelince aynı hata tekrar oluşur.
+            # ÇÖZÜM: tracker state'ini tamamen temizle, sonraki frame persist=False
+            # ile başlasın (reset_tracker'ın yaptığının aynısı).
+            tracker_type = self.tracker_cfg.tracker_type
+            print(f"[DETECTOR] {tracker_type} tracker bozuldu, sıfırlanıyor: {e}")
+            # İç state temizle
+            if hasattr(self.model, 'predictor') and self.model.predictor is not None:
+                if hasattr(self.model.predictor, 'trackers'):
+                    self.model.predictor.trackers = []
+            self._first_after_reset = True  # sonraki frame persist=False kullanacak
+            # Bu frame'i persist=False ile çalıştır (ID'siz detection döner, OK)
+            try:
+                results = self.model.track(
+                    source=frame,
+                    imgsz=self.cfg.imgsz,
+                    conf=self.cfg.conf_threshold,
+                    iou=self.cfg.iou_threshold,
+                    max_det=self.cfg.max_det,
+                    device=self.cfg.device,
+                    half=self.cfg.half,
+                    agnostic_nms=self.cfg.agnostic_nms,
+                    classes=self.cfg.classes,
+                    persist=False,
+                    tracker=self._tracker_yaml,
+                    verbose=False,
+                )
+                return results[0] if results else None
+            except Exception:
+                return None
+        except Exception as e:
+            # Diğer geçici hatalar
+            tracker_type = self.tracker_cfg.tracker_type
+            print(f"[DETECTOR] {tracker_type} tracker hatası (atlanıyor): {type(e).__name__}: {e}")
             return None
 
     @staticmethod

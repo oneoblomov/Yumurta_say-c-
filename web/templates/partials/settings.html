@@ -260,9 +260,23 @@
             x-model="s.tracker_type"
             class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
           >
-            <option value="bytetrack">ByteTrack</option>
-            <option value="botsort">BotSORT</option>
+            <option value="bytetrack">ByteTrack (Standart)</option>
+            <option value="dense">Dense ByteTrack (Bitişik Yumurtalar)</option>
+            <option value="botsort">BotSORT (Titreşim Toleranslı)</option>
           </select>
+          <p class="text-xs text-gray-400 mt-1">
+            <span x-show="s.tracker_type==='dense'"
+              >🟠 Bitişik/dokunuşan yumurtalarda önerilen. Düşük eşikler, yüksek
+              tolerans.</span
+            >
+            <span x-show="s.tracker_type==='botsort'"
+              >🔵 Titreşimli bantta önerilen. Global hareket düzeltme (GMC)
+              kullanır.</span
+            >
+            <span x-show="s.tracker_type==='bytetrack'"
+              >🟢 Standart hızlı takip. Normal koşullar için önerilen.</span
+            >
+          </p>
         </div>
         <div>
           <label
@@ -530,12 +544,22 @@
                   if (this.s[k]) this.s[k] = parseInt(this.s[k]);
               });
               ['enable_clahe','enable_stabilization'].forEach(k => {
-                  if (this.s[k]) this.s[k] = this.s[k] === '1' || this.s[k] === true;
+                  // DB'den gelen '1'/'0' veya 'true'/'false' değerlerini boolean'a çevir
+                  const v = this.s[k];
+                  this.s[k] = (v === '1' || v === true || v === 'true');
               });
           },
           async saveAll() {
+              const boolFields = ['enable_clahe', 'enable_stabilization'];
               const body = {};
-              Object.entries(this.s).forEach(([k,v]) => body[k] = String(v));
+              Object.entries(this.s).forEach(([k,v]) => {
+                  if (boolFields.includes(k)) {
+                      // Boolean değerleri '1'/'0' olarak kaydet (backend beklentisi)
+                      body[k] = (v === true || v === '1' || v === 'true') ? '1' : '0';
+                  } else {
+                      body[k] = String(v);
+                  }
+              });
               const r = await fetch('/api/settings',{
                   method:'POST',
                   headers:{'Content-Type':'application/json'},

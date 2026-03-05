@@ -27,6 +27,18 @@ from typing import Optional
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "threads;1|fflags;nobuffer")
 os.environ.setdefault("OPENCV_FFMPEG_MULTITHREADED", "0")
 
+# ─── RPi5 OpenCV İş Parçacığı Optimizasyonu ─────────────────────────────────
+# Raspberry Pi 5: 4x ARM Cortex-A76 çekirdek.
+# OpenCV varsayılan olarak fazla thread spawn eder → önbelleksiz küçük operasyonlar
+# için context-switch maliyeti kazançtan ağır basar.
+# 4 thread: CLAHE, warpAffine, resize gibi OpenCV parallel operasyonlarını
+# doğal olarak 4 çekirdeğe dağıtır.
+try:
+    cv2.setNumThreads(4)
+except Exception:
+    pass
+# ─────────────────────────────────────────────────────────────────────────────
+
 from .config import SystemConfig
 from .preprocessor import FramePreprocessor
 from .detector import EggDetector
@@ -40,17 +52,42 @@ class ThreadedCapture:
     """
     Ayrı thread'de kamera okuma.
     ana thread cv2.read() I/O beklemesi yapmaz -> ~5ms/frame tasarruf.
+
+    RPi5 OPTİMIZASYON:
+    - V4L2 backend tercih edilir: Linux kernel doğrudan MMAP buffer erişimi,
+      GStreamer/FFmpeg decode overhead yok -> latency düşer, CPU kullanımı azalır.
+    - MJPEG: USB kameralardan daha yüksek FPS kapasitesi.
+    - buffer_size=1: hep en son frame (stale frame birikmesi yok).
     """
 
-    def __init__(self, source, width: int, height: int, fps: int, buffer_size: int):
+    def __init__(self, source, width: int, height: int, fps: int, buffer_size: int,
+                 backend: str = "auto"):
         if isinstance(source, str) and source.isdigit():
             source = int(source)
 
-        self._cap = cv2.VideoCapture(source)
+        # --- Backend seçimi (RPi5 için V4L2 öncelikli) ---
+        _backend = cv2.CAP_ANY
+        if backend in ("v4l2", "auto") and isinstance(source, int):
+            try:
+                cap_try = cv2.VideoCapture(source, cv2.CAP_V4L2)
+                if cap_try.isOpened():
+                    self._cap = cap_try
+                    _backend = cv2.CAP_V4L2
+                    print("[CAPTURE] Backend: V4L2 (RPi5 optimal)")
+                else:
+                    cap_try.release()
+                    self._cap = cv2.VideoCapture(source)
+                    print("[CAPTURE] Backend: AUTO (V4L2 açılamadı)")
+            except Exception:
+                self._cap = cv2.VideoCapture(source)
+                print("[CAPTURE] Backend: AUTO (V4L2 desteklenmiyor)")
+        else:
+            self._cap = cv2.VideoCapture(source)
+
         if not self._cap.isOpened():
             raise RuntimeError(f"Video kaynağı açılamadı: {source}")
 
-        # FIX: FFmpeg thread'lerini 1'e çek (async_lock crash önlemek için)
+        # buffer_size=1: minimum gecikme, sadece en son frame tutulur
         self._cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
         try:
             self._cap.set(cv2.CAP_PROP_THREAD_COUNT, 1)  # type: ignore[attr-defined]
@@ -61,6 +98,10 @@ class ThreadedCapture:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             self._cap.set(cv2.CAP_PROP_FPS, fps)
+            # RPi5: MJPEG ile USB kameralardan daha yüksek FPS
+            if _backend == cv2.CAP_V4L2:
+                self._cap.set(cv2.CAP_PROP_FOURCC,
+                              cv2.VideoWriter_fourcc(*"MJPG"))
 
         self.frame_width = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_height = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -220,6 +261,7 @@ class EggCountingPipeline:
                     self.cfg.pipeline.camera_height,
                     self.cfg.pipeline.camera_fps,
                     self.cfg.pipeline.buffer_size,
+                    backend=self.cfg.pipeline.camera_backend,
                 ).start()
                 print("[PIPELINE] Kamera: threaded capture")
             else:
@@ -392,25 +434,36 @@ class EggCountingPipeline:
         """
         Tek frame pipeline.
 
+        RPi5 OPTİMİZASYON - ROI-ÖNCELİKLİ CLANE:
+          ESKİ: CLAHE tüm 640x480 frame'e uygulanıyordu (~307K piksel).
+          YENİ: Tam frame'e sadece parlaklık normalizasyonu (hızlı),
+                CLAHE sadece küçük ROI bant dilimine uygulanır (~92K piksel @%30 bant).
+                Bu ~3-4x daha az CLAHE işlemi demektir.
+
         DÜZELTME: Aynı frame hem algılama hem görselleştirme için kullanılıyor.
         Eski: algılama=preprocessed, görselleştirme=orijinal -> koordinat UYUMSUZLUĞU.
-        Yeni: preprocessed frame üzerinde algılama yapılır, aynı frame görselleştirilir.
         """
         # 0. Kenar kırpma (FPS artırmak için – küçük frame, hızlı inference)
         if self._crop_top or self._crop_left:
             frame = frame[self._crop_top:self._crop_bottom,
                           self._crop_left:self._crop_right]
 
-        # 1. Ön işleme
-        processed = self._preprocessor.process(frame)
+        # 1. Hafif ön işleme – tam frame'e sadece parlaklık normalizasyonu
+        #    (CLAHE UYGULANMAZ – sadece display için gerekli, inference ROI'de yapılır)
+        display_frame = self._preprocessor.process_light(frame)
 
-        # 2. YOLO + ByteTrack – SADECE ROI BANDINDA (FPS kazanımı)
-        # ROI: sayım çizgisinin üst ve alt sınırı arasındaki bant.
-        # Yalnızca bu alana giren nesneleri algıla; dışarıdaki bölge atlanır.
+        # 2. ROI dilimi – YOLO sadece bu bant içini görecek
         roi_top_y = self._counting_line.roi_top_y
         roi_bottom_y = self._counting_line.roi_bottom_y
-        roi_frame = processed[roi_top_y:roi_bottom_y, :]   # ROI kırpması
-        result = self._detector.detect_and_track(roi_frame)
+        roi_raw = display_frame[roi_top_y:roi_bottom_y, :]   # view (kopya değil)
+
+        # 3. CLAHE sadece küçük ROI bant üzerinde (bu bant inference'a gider)
+        #    process() in-place değiştirir; roi_raw view olduğu için display_frame
+        #    üzerindeki ROI bölgesi de güncellenir (sıfır kopya).
+        roi_processed = self._preprocessor.process(roi_raw)
+
+        # 4. YOLO + Tracker – sadece CLAHE'li ROI bant
+        result = self._detector.detect_and_track(roi_processed)
         detections = self._detector.parse_results(result)
 
         # ROI koordinat ofseti: tüm bbox ve center y'lerini tam frame'e çevir
@@ -420,15 +473,15 @@ class EggCountingPipeline:
             cx, cy = det["center"]
             det["center"] = (cx, cy + roi_top_y)
 
-        # 3. Track yönetimi + spatial dedup
+        # 5. Track yönetimi + spatial dedup
         enriched = self._track_manager.update(detections)
 
-        # 4. Sayım çizgisi kontrolü
+        # 6. Sayım çizgisi kontrolü
         newly_counted = self._counting_line.check_crossings(
             enriched, self._track_manager
         )
 
-        # 5. Trail verisi (görselleştirme)
+        # 7. Trail verisi (görselleştirme)
         trails = {}
         if self.cfg.pipeline.show_track_trail:
             for det in enriched:
@@ -436,9 +489,9 @@ class EggCountingPipeline:
                 if tid is not None:
                     trails[tid] = self._track_manager.get_trail(tid)
 
-        # 6. Görselleştir (AYNI frame üzerinde - koordinat tutarlı)
+        # 8. Görselleştir (display_frame: parlaklık normalize + ROI kısmı CLAHE'li)
         display = self._visualizer.draw(
-            frame=processed,  # DÜZELTME: orijinal değil, preprocessed (koordinat tutarlılığı)
+            frame=display_frame,
             detections=enriched,
             counting_line_y=self._counting_line.line_y,
             roi_top_y=roi_top_y,
@@ -453,7 +506,7 @@ class EggCountingPipeline:
             newly_counted=newly_counted,
         )
 
-        # 7. Debug
+        # 9. Debug
         if self._debug_mode:
             self._visualizer.draw_debug_info(display, {
                 "Frame": self._track_manager.frame_count,

@@ -140,20 +140,35 @@ class TrackManager:
         ByteTrack bazen aynı yumurtaya yeni ID atar (occlusion, frame drop).
         Bu fonksiyon mesafe kontrolü ile çift sayımı engeller.
 
-        Ek: eğer ``_line_y`` mevcutsa, yeni tespit hâlâ sayım çizgisinin
-        aynı tarafındaysa eşleşme yapılmaz. Böylece ROI giriş/çıkışındaki
-        yanlış "sayılmış" görüntüsü önlenir.
+        DÜZELTME: Inference boyutu değiştiğinde (örn. 320px) çizgiyi henüz
+        geçmemiş yumurtalar yanlışlıkla önceki sayılmış bir ID ile eşleşip
+        "sayılmış" olarak işaretleniyordu. Bunun önüne geçmek için:
+
+        1. Yeni tespit çizginin üstündeyse (henüz sayılmamış taraf), eski
+           sayılmış ID de çizginin üstündeyse → kesinlikle eşleştirme yapma.
+        2. Eski ID'nin son pozisyonu çizginin "sayılmış bölgesini" yeterli
+           marjinle geçmiş olmalı (crossing_margin * 2).
+        3. Çok genç olmayan tracklar (5+ frame görülen) spatial dedup'a
+           girmez — gerçekten yeni bir yumurtadır.
 
         Returns:
             Eşleşen eski ID (varsa), None (yoksa)
         """
         radius = self.counter_cfg.spatial_dedup_radius
         max_lost_age = self.tracker_cfg.track_buffer  # Bu kadar frame içinde kaybolmuş olmalı
+        # Spatial dedup için minimum çizgi marjini — eski track bu kadar
+        # çizgiyi geçmiş olmalı (küçük inference'da FP eşleşmeyi önler)
+        line_margin = max(self.counter_cfg.crossing_margin * 3, 20)
 
         best_match = None
         best_dist = float('inf')
 
         line_y = self._line_y
+
+        # Çok uzun süredir görülen track -> gerçek yeni yumurta, dedup'a girmesin
+        track_age = self.track_ages.get(new_tid, 0)
+        if track_age > 5:
+            return None
 
         for old_tid, (ox, oy) in self._lost_track_positions.items():
             # Çok eski kayıp ID'leri atla
@@ -165,14 +180,26 @@ class TrackManager:
             if old_tid not in self.counted_ids:
                 continue
 
-            # çizgi bilgiği varsa, yeni tespit çizginin aynı tarafındaysa es geç
+            # çizgi bilgisi varsa katı yön kontrolü uygula
             if line_y is not None:
                 if self.counter_cfg.direction == "top_to_bottom":
-                    if cy < line_y and oy >= line_y:
-                        # yeni yukarıda eski aşağıda -> henüz çizgiyi geçmemiş
+                    # Yeni yumurta henüz çizgiyi geçmemişse (üstteyse):
+                    # Eski yumurtanın AÇIKÇA çizgiyi geçmiş olması lazım
+                    # (line_margin kadar ötede). Aksi halde false positive.
+                    if cy < line_y:
+                        if oy < line_y + line_margin:
+                            # Eski track çizgiyi yeterince geçmemişti → eşleştirme
+                            continue
+                    # Yeni yumurta da çizgiyi geçmişse → spatial dedup anlamsız
+                    # (zaten sayılacak), geç
+                    if cy >= line_y:
                         continue
+
                 elif self.counter_cfg.direction == "bottom_to_top":
-                    if cy > line_y and oy <= line_y:
+                    if cy > line_y:
+                        if oy > line_y - line_margin:
+                            continue
+                    if cy <= line_y:
                         continue
                 # 'both' yönünde herhangi bir taraf kabul edilir
 

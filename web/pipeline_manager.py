@@ -23,6 +23,12 @@ os.environ.setdefault("OPENCV_FFMPEG_MULTITHREADED", "0")
 
 import cv2
 
+# RPi5: 4x ARM Cortex-A76 çekirdek için OpenCV thread sayısı optimizasyonu
+try:
+    cv2.setNumThreads(4)
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -398,12 +404,25 @@ class PipelineManager:
         config.tracker.track_buffer = int(s.get("track_buffer", "90"))
         config.tracker.match_thresh = float(s.get("match_thresh", "0.85"))
 
+        # Dense mod için özel YOLO NMS eşiği (bitişik yumurtalar daha iyi ayrılsın)
+        if config.tracker.tracker_type == "dense":
+            config.detector.iou_threshold = min(
+                config.detector.iou_threshold, 0.30)
+            config.detector.conf_threshold = min(
+                config.detector.conf_threshold, 0.25)
+            # CLAHE zaten açık olmalı; clip limitini yükselterek kenar kontrastı artır
+            config.preprocessor.enable_clahe = True
+
         # Counter
         config.counter.post_cross_drop_frames = int(s.get("post_cross_drop", "0"))
 
-        # Preprocessor
-        config.preprocessor.enable_clahe = s.get("enable_clahe", "1") == "1"
-        config.preprocessor.enable_stabilization = s.get("enable_stabilization", "0") == "1"
+        # Preprocessor - "1"/"0" veya "true"/"false" formatını kabul et
+        def _as_bool(val: str, default: str = "0") -> bool:
+            v = str(s.get(val, default)).strip().lower()
+            return v in ("1", "true", "yes")
+
+        config.preprocessor.enable_clahe = _as_bool("enable_clahe", "1")
+        config.preprocessor.enable_stabilization = _as_bool("enable_stabilization", "0")
 
         # Pipeline
         config.pipeline.crop_ud = int(s.get("crop_ud", "0"))
@@ -425,7 +444,7 @@ class PipelineManager:
         return config
 
     def _init_capture(self) -> bool:
-        """Kamera/video kaynağını başlat."""
+        """Kamera/video kaynağını başlat (RPi5: V4L2 backend öncelikli)."""
         source = self._config.pipeline.source
 
         src_str = str(source)
@@ -435,7 +454,26 @@ class PipelineManager:
             if isinstance(source, str) and source.isdigit():
                 source = int(source)
 
-            cap = cv2.VideoCapture(source)
+            # --- V4L2 backend: RPi5'te latency ve CPU açısından daha verimli ---
+            cap = None
+            _backend = cv2.CAP_ANY
+            backend_cfg = self._config.pipeline.camera_backend
+            if not is_video_file and isinstance(source, int) and backend_cfg in ("auto", "v4l2"):
+                try:
+                    cap_try = cv2.VideoCapture(source, cv2.CAP_V4L2)
+                    if cap_try.isOpened():
+                        cap = cap_try
+                        _backend = cv2.CAP_V4L2
+                        print("[WEB CAPTURE] Backend: V4L2 (RPi5 optimal)")
+                    else:
+                        cap_try.release()
+                        print("[WEB CAPTURE] V4L2 açılamadı, AUTO")
+                except Exception:
+                    pass
+
+            if cap is None:
+                cap = cv2.VideoCapture(source)
+
             if not cap.isOpened():
                 raise RuntimeError(f"Video kaynağı açılamadı: {source}")
 
@@ -448,6 +486,10 @@ class PipelineManager:
                         self._config.pipeline.camera_height)
                 cap.set(cv2.CAP_PROP_FPS,
                         self._config.pipeline.camera_fps)
+                # MJPEG: USB kameralarda düşük bant genişliğinde daha yüksek FPS
+                if _backend == cv2.CAP_V4L2:
+                    cap.set(cv2.CAP_PROP_FOURCC,
+                            cv2.VideoWriter_fourcc(*"MJPG"))
 
             self._capture = cap
             self._frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -554,20 +596,30 @@ class PipelineManager:
         self._frame_event.set()
 
     def _process_frame(self, frame: np.ndarray) -> np.ndarray:
-        """Tek frame pipeline (pipeline.py ile aynı mantık)."""
+        """
+        Tek frame pipeline (pipeline.py ile aynı mantık).
+
+        RPi5 OPTİMİZASYON: CLAHE sadece ROI bandına uygulanır.
+        Tam frame'e sadece parlaklık normalizasyonu (hafif); CLAHE ~3-4x daha az piksel işler.
+        """
         # Crop
         if self._crop_top or self._crop_left:
             frame = frame[self._crop_top:self._crop_bottom,
                           self._crop_left:self._crop_right]
 
-        # Preprocess
-        processed = self._preprocessor.process(frame)
+        # Hafif ön işleme (parlaklık normalizasyonu) – tam frame, CLAHE'siz
+        display_frame = self._preprocessor.process_light(frame)
 
-        # YOLO + Track (ROI)
+        # ROI dilimi – YOLO sadece bu bant
         roi_top = self._counting_line.roi_top_y
         roi_bot = self._counting_line.roi_bottom_y
-        roi_frame = processed[roi_top:roi_bot, :]
-        result = self._detector.detect_and_track(roi_frame)
+        roi_raw = display_frame[roi_top:roi_bot, :]       # view (kopya yok)
+
+        # CLAHE sadece küçük ROI slice üzerinde (in-place → display_frame güncellenir)
+        roi_processed = self._preprocessor.process(roi_raw)
+
+        # YOLO + Track (ROI)
+        result = self._detector.detect_and_track(roi_processed)
         detections = self._detector.parse_results(result)
 
         # ROI offset
@@ -601,9 +653,9 @@ class PipelineManager:
             if tid is not None:
                 trails[tid] = self._track_manager.get_trail(tid)
 
-        # Visualize
+        # Visualize (display_frame: brightness-normalized + ROI CLAHE'li)
         display = self._visualizer.draw(
-            frame=processed,
+            frame=display_frame,
             detections=enriched,
             counting_line_y=self._counting_line.line_y,
             roi_top_y=roi_top,

@@ -24,16 +24,15 @@ class FramePreprocessor:
         self.cfg = config
         self._frame_counter = 0
 
-        # CLAHE nesnesi bir kez oluştur
-        if self.cfg.enable_clahe:
-            self._clahe = cv2.createCLAHE(
-                clipLimit=self.cfg.clahe_clip_limit,
-                tileGridSize=self.cfg.clahe_grid_size,
-            )
+        # CLAHE nesnesi bir kez oluştur (enable_clahe sonradan True olursa da hazır olsun)
+        self._clahe = cv2.createCLAHE(
+            clipLimit=self.cfg.clahe_clip_limit,
+            tileGridSize=self.cfg.clahe_grid_size,
+        )
 
         # Stabilizasyon nesneleri bir kez oluştur (ESKİ HATA: her frame'de yeniden oluşturuluyordu)
+        self._prev_gray: Optional[np.ndarray] = None
         if self.cfg.enable_stabilization:
-            self._prev_gray: Optional[np.ndarray] = None
             self._orb = cv2.ORB_create(nfeatures=150)     # Bir kez oluştur
             self._bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)  # Bir kez oluştur
             self._transforms = deque(maxlen=self.cfg.stabilization_smoothing)
@@ -48,27 +47,46 @@ class FramePreprocessor:
         """
         Frame ön işleme. IN-PLACE değişiklik yapar, kopya oluşturmaz.
 
-        ESKİ HATA: frame.copy() yapılıyordu -> gereksiz bellek kopyası.
-        Şimdi doğrudan frame üzerinde çalışıyor.
+        RPi5 OPTİMİZASYON: Bu metod sadece ROI dilimine (küçük bant) çağrılmalı.
+        Tam frame için process_light() kullanın (counter yönetimi oradadır).
+        """
+        # Stabilizasyon tam frame'e uygulanmalı – ROI slice için GEREKSİZ
+        # process_light() zaten stabilize etmiş olabilir; burada atla.
+        # Adaptif parlaklık da process_light()'ta zaten uygulandı; burada atla.
+
+        # CLAHE – en değerli preprocessing adımı; detection kalitesini artırır
+        if self.cfg.enable_clahe:
+            frame = self._apply_clahe(frame)
+
+        # Denoise (RPi5'te varsayılan kapalı)
+        if self.cfg.enable_denoise:
+            frame = cv2.GaussianBlur(frame, (3, 3), 0)
+
+        return frame
+
+    def process_light(self, frame: np.ndarray) -> np.ndarray:
+        """
+        Hafif ön işleme – stabilizasyon + parlaklık normalizasyonu. CLAHE YOK.
+
+        RPi5 OPTİMİZASYON: Tam frame için bu metodu kullanın.
+        Sonrasında ROI dilimini kesin ve o küçük slice üzerinde process() çağırın.
+        Bu, CLAHE işlemini (~%30 ROI bandında) 3-4x hızlandırır.
         """
         self._frame_counter += 1
 
         # 1. Stabilizasyon (RPi5'te varsayılan kapalı)
         if self.cfg.enable_stabilization:
+            if not hasattr(self, '_orb'):
+                self._orb = cv2.ORB_create(nfeatures=150)
+                self._bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+                self._transforms = deque(maxlen=self.cfg.stabilization_smoothing)
             frame = self._stabilize(frame)
 
         # 2. Adaptif parlaklık (her N frame'de bir kontrol)
         if self.cfg.adaptive_brightness:
             frame = self._normalize_brightness(frame)
 
-        # 3. CLAHE
-        if self.cfg.enable_clahe:
-            frame = self._apply_clahe(frame)
-
-        # 4. Denoise (RPi5'te varsayılan kapalı)
-        if self.cfg.enable_denoise:
-            frame = cv2.GaussianBlur(frame, (3, 3), 0)  # fastNlMeans yerine Gaussian (100x hızlı)
-
+        # CLAHE UYGULANMIYOR burada – ROI slice için ayrıca process() çağrılır
         return frame
 
     def _apply_clahe(self, frame: np.ndarray) -> np.ndarray:
