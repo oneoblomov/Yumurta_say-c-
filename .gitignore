@@ -5,6 +5,19 @@
 /a1.py
 /runs
 /logs
-/data
+/data/*
+!/data/demo2.mp4
 /models/yolo26n.pt
 todo.md
+/.pytest_cache/
+# Log dosyaları
+*.log
+update.log
+health.log
+setup.log
+# Gizli dosyalar
+secret.txt
+.env
+# Geçici dosyalar
+__pycache__/
+*.tmp

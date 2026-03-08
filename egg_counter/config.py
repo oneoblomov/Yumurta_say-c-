@@ -34,6 +34,8 @@ class DetectorConfig:
     augment: bool = False
     classes: Optional[list] = None
     vid_stride: int = 1
+    enable_clahe: bool = False            # Görüntü iyileştirme
+    enable_stabilization: bool = False    # Sarsıntı engelleme
 
     def __post_init__(self):
         if not self.device:

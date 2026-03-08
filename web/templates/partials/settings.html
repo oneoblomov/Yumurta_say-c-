@@ -1,598 +1,1039 @@
-<!-- partials/settings.html - Ayarlar -->
+<!-- partials/settings.html - Accordion-style Ayarlar -->
 <div x-data="settingsPage()" x-init="init()">
+
+  <!-- Header -->
   <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-    <h2
-      class="text-lg font-bold text-gray-800"
-      x-text="t.settings?.title || 'Ayarlar'"
-    ></h2>
-    <button
-      @click="saveAll()"
-      class="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
-    >
+    <h2 class="text-lg font-bold text-gray-800" x-text="t.settings?.title || 'Ayarlar'"></h2>
+    <button @click="saveAll()"
+            class="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
       <i data-lucide="save" class="w-4 h-4"></i>
       <span x-text="t.settings?.save || 'Kaydet'"></span>
     </button>
   </div>
 
-  <!-- Tabs -->
-  <div class="flex flex-wrap gap-1 mb-6 bg-gray-100 rounded-lg p-1">
-    <template x-for="tab in tabs" :key="tab.id">
-      <button
-        @click="activeTab=tab.id"
-        :class="activeTab===tab.id?'bg-white shadow-sm text-gray-800':'text-gray-500 hover:text-gray-700'"
-        class="px-4 py-2 rounded-md text-sm font-medium transition-all"
-        x-text="tab.label"
-      ></button>
-    </template>
-  </div>
+  <div class="space-y-3 max-w-full">
 
-  <!-- Camera Settings -->
-  <div x-show="activeTab==='camera'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="camera" class="w-5 h-5 text-primary-500"></i>
-        <span x-text="t.settings?.camera || 'Kamera Ayarları'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.camera_source || 'Kamera Kaynağı'"
-          ></label>
-          <input
-            x-model="s.camera_source"
-            type="text"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"
-            placeholder="0 veya /dev/video0"
-          />
-          <p class="text-xs text-gray-400 mt-1">
-            0 = varsayılan kamera, veya video dosya yolu
-          </p>
+    <!-- ── 1. KAYNAK & KAMERA ─────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('camera')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-blue-50 rounded-lg p-2"><i data-lucide="camera" class="w-4 h-4 text-blue-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.camera || 'Kaynak & Kamera'"></span>
         </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.resolution || 'Çözünürlük'"
-          ></label>
-          <div class="flex gap-2">
-            <input
-              x-model="s.camera_width"
-              type="number"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-              placeholder="640"
-            />
-            <span class="py-2 text-gray-400">×</span>
-            <input
-              x-model="s.camera_height"
-              type="number"
-              class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-              placeholder="480"
-            />
-          </div>
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.stream_q || 'Akış Kalitesi (1-100)'"
-          ></label>
-          <input
-            x-model="s.stream_quality"
-            type="range"
-            min="10"
-            max="100"
-            step="5"
-            class="w-full accent-primary-500"
-          />
-          <span
-            class="text-xs text-gray-500"
-            x-text="s.stream_quality+'%'"
-          ></span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Detection Settings -->
-  <div x-show="activeTab==='detector'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="scan" class="w-5 h-5 text-green-500"></i>
-        <span x-text="t.settings?.detection || 'Algılama Ayarları'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.model_path || 'Model Yolu'"
-          ></label>
-          <input
-            x-model="s.model_path"
-            type="text"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.imgsz || 'Inference Boyutu'"
-          ></label>
-          <select
-            x-model="s.imgsz"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-          >
-            <option value="320">320 (Hızlı)</option>
-            <option value="480">480 (Dengeli)</option>
-            <option value="640">640 (Kaliteli)</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span x-text="t.settings?.conf || 'Güven Eşiği'"></span>
-            <span
-              class="text-primary-500 font-mono ml-1"
-              x-text="s.conf_threshold"
-            ></span>
-          </label>
-          <input
-            x-model="s.conf_threshold"
-            type="range"
-            min="0.05"
-            max="0.95"
-            step="0.05"
-            class="w-full accent-primary-500"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span x-text="t.settings?.iou || 'IoU Eşiği'"></span>
-            <span
-              class="text-primary-500 font-mono ml-1"
-              x-text="s.iou_threshold"
-            ></span>
-          </label>
-          <input
-            x-model="s.iou_threshold"
-            type="range"
-            min="0.1"
-            max="0.9"
-            step="0.05"
-            class="w-full accent-primary-500"
-          />
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Counter Settings -->
-  <div x-show="activeTab==='counter'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i
-          data-lucide="git-commit-horizontal"
-          class="w-5 h-5 text-yellow-500"
-        ></i>
-        <span x-text="t.settings?.counter || 'Sayım Ayarları'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span x-text="t.settings?.line_pos || 'Çizgi Pozisyonu'"></span>
-            <span
-              class="text-primary-500 font-mono ml-1"
-              x-text="(s.line_position*100).toFixed(0)+'%'"
-            ></span>
-          </label>
-          <input
-            x-model="s.line_position"
-            type="range"
-            min="0.1"
-            max="0.9"
-            step="0.05"
-            class="w-full accent-yellow-500"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.direction || 'Yön'"
-          ></label>
-          <select
-            x-model="s.direction"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none"
-          >
-            <option value="top_to_bottom">Yukarıdan Aşağı</option>
-            <option value="bottom_to_top">Aşağıdan Yukarı</option>
-            <option value="both">Her İki Yön</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span x-text="t.settings?.roi_top || 'ROI Üst'"></span>
-            <span
-              class="text-primary-500 font-mono ml-1"
-              x-text="(s.roi_top*100).toFixed(0)+'%'"
-            ></span>
-          </label>
-          <input
-            x-model="s.roi_top"
-            type="range"
-            min="0.0"
-            max="0.9"
-            step="0.05"
-            class="w-full accent-orange-500"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span x-text="t.settings?.roi_bottom || 'ROI Alt'"></span>
-            <span
-              class="text-primary-500 font-mono ml-1"
-              x-text="(s.roi_bottom*100).toFixed(0)+'%'"
-            ></span>
-          </label>
-          <input
-            x-model="s.roi_bottom"
-            type="range"
-            min="0.1"
-            max="1.0"
-            step="0.05"
-            class="w-full accent-orange-500"
-          />
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tracker Settings -->
-  <div x-show="activeTab==='tracker'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="route" class="w-5 h-5 text-purple-500"></i>
-        <span x-text="t.settings?.tracker || 'Takip Ayarları'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.tracker_type || 'Tracker Tipi'"
-          ></label>
-          <select
-            x-model="s.tracker_type"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-          >
-            <option value="bytetrack">ByteTrack (Standart)</option>
-            <option value="dense">Dense ByteTrack (Bitişik Yumurtalar)</option>
-            <option value="botsort">BotSORT (Titreşim Toleranslı)</option>
-          </select>
-          <p class="text-xs text-gray-400 mt-1">
-            <span x-show="s.tracker_type==='dense'"
-              >🟠 Bitişik/dokunuşan yumurtalarda önerilen. Düşük eşikler, yüksek
-              tolerans.</span
-            >
-            <span x-show="s.tracker_type==='botsort'"
-              >🔵 Titreşimli bantta önerilen. Global hareket düzeltme (GMC)
-              kullanır.</span
-            >
-            <span x-show="s.tracker_type==='bytetrack'"
-              >🟢 Standart hızlı takip. Normal koşullar için önerilen.</span
-            >
-          </p>
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.track_buffer || 'Track Buffer (frame)'"
-          ></label>
-          <input
-            x-model="s.track_buffer"
-            type="number"
-            min="10"
-            max="300"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span
-              x-text="t.settings?.match_thresh || 'Eşleştirme Eşiği'"
-            ></span>
-            <span
-              class="text-primary-500 font-mono ml-1"
-              x-text="s.match_thresh"
-            ></span>
-          </label>
-          <input
-            x-model="s.match_thresh"
-            type="range"
-            min="0.3"
-            max="0.99"
-            step="0.05"
-            class="w-full accent-purple-500"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.post_cross_drop || 'Sayıldıktan Bırakma (frame)'"
-          ></label>
-          <input
-            x-model="s.post_cross_drop"
-            type="number"
-            min="0"
-            max="100"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-            placeholder="0 = kapalı"
-          />
-          <p class="text-xs text-gray-400 mt-1">0 = devre dışı</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Preprocessing Settings -->
-  <div x-show="activeTab==='preprocessing'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="image" class="w-5 h-5 text-blue-500"></i>
-        <span x-text="t.settings?.preprocessing || 'Ön İşleme'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span x-text="t.settings?.enable_clahe || 'CLAHE Ön İşleme'"></span>
-          </label>
-          <input
-            x-model="s.enable_clahe"
-            type="checkbox"
-            class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">
-            <span
-              x-text="t.settings?.enable_stabilization || 'Titreşim Stabilizasyonu'"
-            ></span>
-          </label>
-          <input
-            x-model="s.enable_stabilization"
-            type="checkbox"
-            class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.crop_ud || 'Üst-Alt Kırpma (%)'"
-          ></label>
-          <input
-            x-model="s.crop_ud"
-            type="number"
-            min="0"
-            max="90"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-            placeholder="0 = kırpma yok"
-          />
-          <p class="text-xs text-gray-400 mt-1">Üst ve alt toplam yüzde</p>
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.crop_lr || 'Sol-Sağ Kırpma (%)'"
-          ></label>
-          <input
-            x-model="s.crop_lr"
-            type="number"
-            min="0"
-            max="90"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-            placeholder="0 = kırpma yok"
-          />
-          <p class="text-xs text-gray-400 mt-1">Sol ve sağ toplam yüzde</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Goals Settings -->
-  <div x-show="activeTab==='goals'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="target" class="w-5 h-5 text-red-500"></i>
-        <span x-text="t.settings?.goals || 'Hedefler'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.daily_goal || 'Günlük Hedef'"
-          ></label>
-          <input
-            x-model="s.daily_goal"
-            type="number"
-            min="0"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-            placeholder="0 = kapalı"
-          />
-          <p class="text-xs text-gray-400 mt-1">0 = hedef kapalı</p>
-        </div>
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.weekly_goal || 'Haftalık Hedef'"
-          ></label>
-          <input
-            x-model="s.weekly_goal"
-            type="number"
-            min="0"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-            placeholder="0 = kapalı"
-          />
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Display Settings -->
-  <div x-show="activeTab==='display'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="palette" class="w-5 h-5 text-pink-500"></i>
-        <span x-text="t.settings?.display || 'Görünüm'"></span>
-      </h3>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label
-            class="block text-sm text-gray-600 mb-1"
-            x-text="t.settings?.language || 'Dil'"
-          ></label>
-          <select
-            x-model="s.language"
-            @change="setLang(s.language)"
-            class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
-          >
-            <option value="tr">Türkçe</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Update System -->
-  <div x-show="activeTab==='system'" class="space-y-4">
-    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-      <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        <i data-lucide="refresh-cw" class="w-5 h-5 text-cyan-500"></i>
-        <span x-text="t.settings?.updates || 'Güncelleme Sistemi'"></span>
-      </h3>
-
-      <!-- Current Version -->
-      <div class="mb-4 p-3 bg-gray-50 rounded-lg">
-        <p class="text-sm">
-          <span
-            class="font-medium"
-            x-text="t.settings?.current_ver || 'Mevcut Sürüm:'"
-          ></span>
-          <span class="font-mono text-primary-600">v1.0.0</span>
-        </p>
-      </div>
-
-      <!-- Version History -->
-      <h4
-        class="text-sm font-medium text-gray-600 mb-2"
-        x-text="t.settings?.version_history || 'Sürüm Geçmişi'"
-      ></h4>
-      {% if versions %}
-      <div class="space-y-2">
-        {% for v in versions %}
-        <div
-          class="flex items-center justify-between p-3 rounded-lg border {{ 'border-green-200 bg-green-50' if v.is_active else 'border-gray-200' }}"
-        >
+        <i :data-lucide="openGroups.camera ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.camera" class="border-t border-gray-100">
+        <div class="p-5 space-y-4">
           <div>
-            <span class="font-mono text-sm font-medium">v{{ v.version }}</span>
-            {% if v.is_active %}
-            <span
-              class="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full"
-              >Aktif</span
-            >
-            {% endif %}
-            <p class="text-xs text-gray-500 mt-0.5">{{ v.installed_at }}</p>
-            {% if v.changelog %}
-            <p class="text-xs text-gray-400 mt-0.5">{{ v.changelog }}</p>
-            {% endif %}
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-sm font-medium text-gray-700" x-text="t.settings?.camera_select || 'Bağlı Kamera Seç'"></label>
+              <button @click="detectCameras()" :disabled="detectingCameras"
+                      class="flex items-center gap-1.5 px-3 py-1 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors">
+                <i :data-lucide="detectingCameras ? 'loader-2' : 'scan'" class="w-3.5 h-3.5"
+                   :class="detectingCameras ? 'animate-spin' : ''"></i>
+                <span x-text="t.settings?.camera_detect || 'Kameraları Tara'"></span>
+              </button>
+            </div>
+            <div x-show="cameras.length > 0" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              <template x-for="cam in cameras" :key="cam.value">
+                <button @click="s.camera_source = cam.value"
+                        :class="s.camera_source === cam.value ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-blue-300 text-gray-600'"
+                        class="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors text-left">
+                  <i data-lucide="video" class="w-4 h-4 shrink-0"></i>
+                  <span x-text="cam.label"></span>
+                </button>
+              </template>
+            </div>
           </div>
-          {% if not v.is_active %}
-          <button
-            @click="rollback({{ v.id }})"
-            class="px-3 py-1.5 bg-orange-50 text-orange-600 text-xs rounded-lg hover:bg-orange-100 transition-colors font-medium"
-          >
-            <i data-lucide="undo-2" class="w-3.5 h-3.5 inline mr-1"></i>
-            Geri Al
-          </button>
-          {% endif %}
+          <div>
+            <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.camera_file || 'Dosya / URL'"></label>
+            <input x-model="s.camera_source" type="text"
+                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"
+                   placeholder="0, /dev/video0 veya /path/to/video.mp4" />
+            <p class="text-xs text-gray-400 mt-1" x-text="t.settings?.camera_source_hint || ''"></p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.resolution || 'Çözünürlük'"></label>
+              <div class="flex gap-2 items-center">
+                <input x-model="s.camera_width" type="number"
+                       class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none" placeholder="640"/>
+                <span class="text-gray-400 shrink-0">×</span>
+                <input x-model="s.camera_height" type="number"
+                       class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none" placeholder="480"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.stream_q || 'Akış Kalitesi'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="s.stream_quality+'%'"></span>
+              </label>
+              <input x-model="s.stream_quality" type="range" min="10" max="100" step="5" class="w-full accent-primary-500"/>
+            </div>
+          </div>
         </div>
-        {% endfor %}
       </div>
-      {% else %}
-      <p class="text-gray-400 text-sm">Sürüm geçmişi bulunmuyor.</p>
-      {% endif %}
     </div>
+
+    <!-- ── 2. ALGILAMA ───────────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('detector')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-green-50 rounded-lg p-2"><i data-lucide="scan" class="w-4 h-4 text-green-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.detection || 'Algılama'"></span>
+        </div>
+        <i :data-lucide="openGroups.detector ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.detector" class="border-t border-gray-100">
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2" x-text="t.settings?.model_path || 'Model Seçimi'"></label>
+            <div class="space-y-2">
+              <template x-for="m in availableModels" :key="m.path">
+                <label :class="s.model_path === m.path ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-green-300'"
+                       class="flex items-center gap-3 px-4 py-3 border rounded-lg cursor-pointer transition-colors">
+                  <input type="radio" :value="m.path" x-model="s.model_path" class="text-green-500 shrink-0"/>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-800 truncate" x-text="m.name"></p>
+                    <p class="text-xs text-gray-400" x-text="m.path + ' · ' + m.type + ' · ' + m.size_mb + ' MB'"></p>
+                  </div>
+                  <span x-show="s.model_path === m.path"
+                        class="shrink-0 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                    <i data-lucide="check" class="w-3 h-3 text-white"></i>
+                  </span>
+                </label>
+              </template>
+              <div x-show="availableModels.length === 0" class="text-sm text-gray-400 italic px-1">Model bulunamadı</div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.imgsz || 'Inference Boyutu'"></label>
+            <select x-model="s.imgsz"
+                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-200 outline-none">
+              <option value="320">320 (Hızlı)</option>
+              <option value="480">480 (Dengeli)</option>
+              <option value="640">640 (Kaliteli)</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.conf || 'Güven Eşiği'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="s.conf_threshold"></span>
+              </label>
+              <input x-model="s.conf_threshold" type="range" min="0.05" max="0.95" step="0.05" class="w-full accent-primary-500"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.iou || 'IoU Eşiği'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="s.iou_threshold"></span>
+              </label>
+              <input x-model="s.iou_threshold" type="range" min="0.1" max="0.9" step="0.05" class="w-full accent-primary-500"/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 3. SAYIM ──────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('counter')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-yellow-50 rounded-lg p-2"><i data-lucide="git-commit-horizontal" class="w-4 h-4 text-yellow-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.counter || 'Sayım'"></span>
+        </div>
+        <i :data-lucide="openGroups.counter ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.counter" class="border-t border-gray-100">
+        <div class="p-5 space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.line_pos || 'Çizgi Pozisyonu'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="(s.line_position*100).toFixed(0)+'%'"></span>
+              </label>
+              <input x-model="s.line_position" type="range" min="0.1" max="0.9" step="0.05" class="w-full accent-yellow-500"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-2" x-text="t.settings?.direction || 'Sayım Yönü'"></label>
+              <div class="flex gap-2">
+                <template x-for="dir in [{val:'top_to_bottom',icon:'arrow-down',key:'dir_ttb',def:'↓'},{val:'bottom_to_top',icon:'arrow-up',key:'dir_btt',def:'↑'},{val:'both',icon:'arrows-up-down',key:'dir_both',def:'↕'}]" :key="dir.val">
+                  <button @click="s.direction = dir.val"
+                          :class="s.direction===dir.val ? 'bg-yellow-100 border-yellow-400 text-yellow-700' : 'border-gray-200 hover:border-yellow-300 text-gray-500'"
+                          class="flex-1 flex flex-col items-center gap-1 py-2 border rounded-lg text-xs transition-colors">
+                    <i :data-lucide="dir.icon" class="w-4 h-4"></i>
+                    <span x-text="t.settings?.[dir.key] || dir.def"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.roi_top || 'ROI Üst'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="(s.roi_top*100).toFixed(0)+'%'"></span>
+              </label>
+              <input x-model="s.roi_top" type="range" min="0.0" max="0.9" step="0.05" class="w-full accent-orange-500"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.roi_bottom || 'ROI Alt'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="(s.roi_bottom*100).toFixed(0)+'%'"></span>
+              </label>
+              <input x-model="s.roi_bottom" type="range" min="0.1" max="1.0" step="0.05" class="w-full accent-orange-500"/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 4. TAKİP ──────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('tracker')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-purple-50 rounded-lg p-2"><i data-lucide="route" class="w-4 h-4 text-purple-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.tracker || 'Takip'"></span>
+        </div>
+        <i :data-lucide="openGroups.tracker ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.tracker" class="border-t border-gray-100">
+        <div class="p-5 space-y-4">
+          <div>
+            <label class="block text-sm text-gray-600 mb-2" x-text="t.settings?.tracker_type || 'Tracker Tipi'"></label>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <template x-for="trk in [{val:'bytetrack',label:'ByteTrack',desc:'Standart hızlı'},{val:'dense',label:'Dense',desc:'Bitişik yumurtalar'},{val:'botsort',label:'BotSORT',desc:'Titreşim toleranslı'}]" :key="trk.val">
+                <button @click="s.tracker_type = trk.val"
+                        :class="s.tracker_type===trk.val ? 'border-purple-400 bg-purple-50' : 'border-gray-200 hover:border-purple-300'"
+                        class="p-3 border rounded-lg text-left transition-colors">
+                  <p class="text-sm font-semibold text-gray-800" x-text="trk.label"></p>
+                  <p class="text-xs text-gray-500 mt-0.5" x-text="trk.desc"></p>
+                </button>
+              </template>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.track_buffer || 'Track Buffer (frame)'"></label>
+              <input x-model="s.track_buffer" type="number" min="10" max="300"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1">
+                <span x-text="t.settings?.match_thresh || 'Eşleştirme Eşiği'"></span>
+                <span class="text-primary-500 font-mono ml-1" x-text="s.match_thresh"></span>
+              </label>
+              <input x-model="s.match_thresh" type="range" min="0.3" max="0.99" step="0.05" class="w-full accent-purple-500"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.post_cross_drop || 'Bırakma (frame)'"></label>
+              <input x-model="s.post_cross_drop" type="number" min="0" max="100"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 5. ÖN İŞLEME ─────────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('preprocessing')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-blue-50 rounded-lg p-2"><i data-lucide="image" class="w-4 h-4 text-blue-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.preprocessing || 'Ön İşleme'"></span>
+        </div>
+        <i :data-lucide="openGroups.preprocessing ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.preprocessing" class="border-t border-gray-100">
+        <div class="p-5 space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label :class="s.enable_clahe ? 'border-blue-300 bg-blue-50' : 'border-gray-200'"
+                   class="flex items-start gap-3 cursor-pointer p-3 rounded-lg border hover:border-blue-300 transition-colors">
+              <input type="checkbox" x-model="s.enable_clahe" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+              <div>
+                <p class="text-sm font-medium text-gray-700" x-text="t.settings?.enable_clahe || 'CLAHE'"></p>
+                <p class="text-xs text-gray-400 mt-0.5">Kontrast artırma</p>
+              </div>
+            </label>
+            <label :class="s.enable_stabilization ? 'border-blue-300 bg-blue-50' : 'border-gray-200'"
+                   class="flex items-start gap-3 cursor-pointer p-3 rounded-lg border hover:border-blue-300 transition-colors">
+              <input type="checkbox" x-model="s.enable_stabilization" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+              <div>
+                <p class="text-sm font-medium text-gray-700" x-text="t.settings?.enable_stabilization || 'Stabilizasyon'"></p>
+                <p class="text-xs text-gray-400 mt-0.5">Titreşim azaltma</p>
+              </div>
+            </label>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.crop_ud || 'Üst-Alt Kırpma (%)'"></label>
+              <input x-model="s.crop_ud" type="number" min="0" max="90"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.crop_lr || 'Sol-Sağ Kırpma (%)'"></label>
+              <input x-model="s.crop_lr" type="number" min="0" max="90"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 6. HEDEFLER ───────────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('goals')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-red-50 rounded-lg p-2"><i data-lucide="target" class="w-4 h-4 text-red-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.goals || 'Hedefler'"></span>
+        </div>
+        <i :data-lucide="openGroups.goals ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.goals" class="border-t border-gray-100">
+        <div class="p-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.daily_goal || 'Günlük Hedef'"></label>
+              <input x-model="s.daily_goal" type="number" min="0"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.weekly_goal || 'Haftalık Hedef'"></label>
+              <input x-model="s.weekly_goal" type="number" min="0"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 7. GÖRÜNÜM & DİL ──────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('display')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-pink-50 rounded-lg p-2"><i data-lucide="palette" class="w-4 h-4 text-pink-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.display || 'Görünüm & Dil'"></span>
+        </div>
+        <i :data-lucide="openGroups.display ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.display" class="border-t border-gray-100">
+        <div class="p-5 space-y-5">
+          <!-- Theme -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-3" x-text="t.settings?.theme || 'Tema'"></label>
+            <div class="flex gap-3 flex-wrap">
+              <button @click="setThemeAndSave('light')" :class="currentTheme()==='light' ? 'active' : ''" class="theme-btn">
+                <i data-lucide="sun" class="w-4 h-4"></i>
+                <span x-text="t.settings?.theme_light || 'Açık'"></span>
+              </button>
+              <button @click="setThemeAndSave('dark')" :class="currentTheme()==='dark' ? 'active' : ''" class="theme-btn">
+                <i data-lucide="moon" class="w-4 h-4"></i>
+                <span x-text="t.settings?.theme_dark || 'Koyu'"></span>
+              </button>
+              <button @click="setThemeAndSave('system')" :class="currentTheme()==='system' ? 'active' : ''" class="theme-btn">
+                <i data-lucide="monitor" class="w-4 h-4"></i>
+                <span x-text="t.settings?.theme_system || 'Sistem'"></span>
+              </button>
+            </div>
+          </div>
+          <!-- Language -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2" x-text="t.settings?.language || 'Arayüz Dili'"></label>
+            <div class="flex gap-3 flex-wrap">
+              <template x-for="[code, name] in Object.entries(langs)" :key="code">
+                <button @click="setLang(code)"
+                        :class="lang===code ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-gray-200 hover:border-primary-300 text-gray-600'"
+                        class="flex items-center gap-2 px-4 py-2 border rounded-lg text-sm transition-colors font-medium">
+                  <span x-text="name"></span>
+                  <i x-show="lang===code" data-lucide="check" class="w-3.5 h-3.5"></i>
+                </button>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 8. OTOMATİK OPTİMİZASYON ─────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('optimize')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-cyan-50 rounded-lg p-2"><i data-lucide="zap" class="w-4 h-4 text-cyan-500"></i></div>
+          <div>
+            <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.optimize || 'Otomatik Optimizasyon'"></span>
+            <span x-show="optRunning" class="ml-2 text-xs text-cyan-600 font-medium">● Çalışıyor</span>
+            <span x-show="optDone && !optRunning" class="ml-2 text-xs text-green-600 font-medium">✓ Tamamlandı</span>
+          </div>
+        </div>
+        <i :data-lucide="openGroups.optimize ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.optimize" class="border-t border-gray-100">
+        <div class="p-5 space-y-4">
+          <p class="text-sm text-gray-500" x-text="t.settings?.optimize_desc || 'Tüm parametre kombinasyonları test edilir, en iyi sonuç bulunur.'"></p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.optimize_video || 'Test Video / Resim'"></label>
+              <input x-model="optVideo" type="text"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"
+                     placeholder="data/demo2.mp4 veya data/sample.jpg"/>
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.optimize_expected || 'Beklenen Sayım'"></label>
+              <input x-model="optExpected" type="number" min="1"
+                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"/>
+            </div>
+          </div>
+          <div class="flex gap-3 items-center">
+            <button @click="startOptimize()" x-show="!optRunning"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors">
+              <i data-lucide="zap" class="w-4 h-4"></i>
+              <span x-text="t.settings?.optimize_start || 'Optimizasyonu Başlat'"></span>
+            </button>
+            <button @click="cancelOptimize()" x-show="optRunning"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors">
+              <i data-lucide="square" class="w-4 h-4"></i>
+              <span x-text="t.settings?.optimize_cancel || 'İptal Et'"></span>
+            </button>
+          </div>
+          <!-- Progress -->
+          <div x-show="optRunning || optDone">
+            <!-- Anlık İstatistikler -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+              <div class="bg-gray-50 p-2 rounded border border-gray-100">
+                <p class="text-[10px] text-gray-500 uppercase">En İyi Doğruluk</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-sm font-bold text-green-600" x-text="(optBestAcc || 0) + '%'"></span>
+                </div>
+              </div>
+              <div class="bg-gray-50 p-2 rounded border border-gray-100">
+                <p class="text-[10px] text-gray-500 uppercase">En İyi FPS</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-sm font-bold text-blue-600" x-text="optBestFps || 0"></span>
+                </div>
+              </div>
+              <div class="bg-gray-50 p-2 rounded border border-gray-100">
+                <p class="text-[10px] text-gray-500 uppercase">Son Doğruluk</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-sm font-semibold text-gray-700" x-text="(optLastAcc || 0) + '%'"></span>
+                </div>
+              </div>
+              <div class="bg-gray-50 p-2 rounded border border-gray-100">
+                <p class="text-[10px] text-gray-500 uppercase">Son FPS</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-sm font-semibold text-gray-700" x-text="optLastFps || 0"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs text-gray-500 truncate mr-2" x-text="optCurrent"></span>
+              <span class="text-xs font-mono text-gray-500 shrink-0"
+                    x-text="optProgress + ' / ' + optTotal"></span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="bg-cyan-500 h-2 rounded-full transition-all duration-300"
+                   :style="'width:' + (optTotal > 0 ? Math.min(100, Math.round(optProgress/optTotal*100)) : 0) + '%'"></div>
+            </div>
+          </div>
+          <div x-show="optResults.length > 0" class="mt-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center justify-between">
+              <span x-text="t.settings?.optimize_results || 'Sonuçlar'"></span>
+              <span class="text-[10px] text-gray-400 font-normal" x-text="optResults.length + ' deneme kaydedildi'"></span>
+            </h4>
+            <div class="overflow-x-auto rounded-lg border border-gray-200" style="max-height: 400px; overflow-y: auto;">
+              <table class="w-full text-xs">
+                <thead class="bg-gray-50 text-gray-500 uppercase sticky top-0 z-10">
+                  <tr>
+                    <th class="px-3 py-2 text-left">#</th>
+                    <th class="px-3 py-2 text-right" x-text="t.settings?.optimize_accuracy || 'Doğruluk / FPS'"></th>
+                    <th class="px-3 py-2 text-right" x-text="t.settings?.optimize_count_got || 'Sayılan'"></th>
+                    <th class="px-3 py-2 text-center">conf</th>
+                    <th class="px-3 py-2 text-center">iou</th>
+                    <th class="px-3 py-2 text-center">satır</th>
+                    <th class="px-3 py-2 text-center">tracker</th>
+                    <template x-for="k in optParamKeys" :key="k">
+                      <th class="px-3 py-2 text-center" x-text="k"></th>
+                    </template>
+                    <th class="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                  <template x-for="r in optResults" :key="r.rank">
+                    <tr :class="r.rank === 1 ? 'bg-green-50' : 'hover:bg-gray-50'" class="transition-colors">
+                      <td class="px-3 py-2 font-bold text-gray-700" x-text="'#'+r.rank"></td>
+                      <td class="px-3 py-2 text-right">
+                        <span :class="r.accuracy >= 95 ? 'text-green-600 font-bold' : r.accuracy >= 85 ? 'text-yellow-600 font-medium' : 'text-red-500'"
+                              x-text="r.accuracy + '% (' + r.fps + 'fps)'" ></span>
+                      </td>
+                      <td class="px-3 py-2 text-right font-mono" x-text="r.count + ' / ' + r.expected"></td>
+                      <td class="px-3 py-2 text-center font-mono" x-text="r.conf"></td>
+                      <td class="px-3 py-2 text-center font-mono" x-text="r.iou"></td>
+                      <td class="px-3 py-2 text-center font-mono" x-text="(r.line_position*100).toFixed(0)+'%'"></td>
+                      <td class="px-3 py-2 text-center" x-text="r.tracker_type"></td>
+                      <template x-for="k in optParamKeys" :key="k">
+                        <td class="px-3 py-2 text-center font-mono" x-text="r.params[k]"></td>
+                      </template>
+                      <td class="px-3 py-2 text-right">
+                        <button @click="applyOptResult(r)"
+                                class="px-2 py-1 bg-primary-500 hover:bg-primary-600 text-white rounded text-xs transition-colors"
+                                x-text="t.settings?.optimize_apply || 'Uygula'"></button>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 9. SİSTEM ─────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <button @click="toggleGroup('system')"
+              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="bg-cyan-50 rounded-lg p-2"><i data-lucide="refresh-cw" class="w-4 h-4 text-cyan-500"></i></div>
+          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.updates || 'Güncelleme Sistemi'"></span>
+        </div>
+        <i :data-lucide="openGroups.system ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
+      </button>
+      <div x-show="openGroups.system" class="border-t border-gray-100">
+        <div class="p-5 space-y-5">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <p class="text-xs uppercase tracking-wide text-gray-500" x-text="t.settings?.current_ver || 'Mevcut Sürüm'"></p>
+              <p class="mt-2 text-2xl font-bold text-primary-600 font-mono" x-text="versionLabel(updateStatus.current_version || currentVersion)"></p>
+              <p class="mt-2 text-xs text-gray-500" x-text="updateStatus.message || (t.settings?.update_ready || 'Release tabanlı güncelleme aktif')"></p>
+            </div>
+            <div class="rounded-xl border p-4"
+                 :class="updateStatus.update_available ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-gray-500" x-text="t.settings?.latest_release || 'Son Yayın'"></p>
+                  <p class="mt-2 text-xl font-bold font-mono"
+                     :class="updateStatus.update_available ? 'text-amber-700' : 'text-gray-700'"
+                     x-text="versionLabel(updateStatus.latest_version)"></p>
+                </div>
+                <span x-show="updateStatus.update_available"
+                      class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700"
+                      x-text="t.settings?.update_available || 'Yeni sürüm var'"></span>
+              </div>
+              <p class="mt-2 text-xs text-gray-500" x-text="updateStatus.last_check_at || '-' "></p>
+            </div>
+            <div class="rounded-xl border p-4"
+                 :class="updateStatus.busy ? 'border-blue-200 bg-blue-50' : updateStatus.error ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'">
+              <p class="text-xs uppercase tracking-wide text-gray-500" x-text="t.settings?.update_status || 'Durum'"></p>
+              <p class="mt-2 text-lg font-semibold"
+                 :class="updateStatus.error ? 'text-red-600' : updateStatus.busy ? 'text-blue-600' : 'text-gray-700'"
+                 x-text="updateStatus.state || 'idle'"></p>
+              <p class="mt-2 text-xs" :class="updateStatus.error ? 'text-red-500' : 'text-gray-500'"
+                 x-text="updateStatus.error || updateStatus.message || '-' "></p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="space-y-4 rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-700" x-text="t.settings?.update_preferences || 'Güncelleme Tercihleri'"></h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">GitHub Owner</label>
+                  <input x-model="s.update_repo_owner" type="text"
+                         class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"/>
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">GitHub Repo</label>
+                  <input x-model="s.update_repo_name" type="text"
+                         class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none"/>
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.update_channel || 'Kanal'"></label>
+                  <select x-model="s.update_channel"
+                          class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none">
+                    <option value="stable">Stable</option>
+                    <option value="prerelease">Prerelease</option>
+                  </select>
+                </div>
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:border-cyan-300 transition-colors">
+                  <input type="checkbox" x-model="s.update_include_prerelease" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+                  <div>
+                    <p class="text-sm font-medium text-gray-700" x-text="t.settings?.include_prerelease || 'Ön sürümleri dahil et'"></p>
+                    <p class="text-xs text-gray-400">`v1.0.2-rc1` gibi yayınları listeler</p>
+                  </div>
+                </label>
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:border-cyan-300 transition-colors">
+                  <input type="checkbox" x-model="s.update_auto_check" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+                  <div>
+                    <p class="text-sm font-medium text-gray-700" x-text="t.settings?.auto_check || 'Otomatik kontrol'"></p>
+                    <p class="text-xs text-gray-400">`update.timer` periyodik kontrol yapar</p>
+                  </div>
+                </label>
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:border-cyan-300 transition-colors">
+                  <input type="checkbox" x-model="s.update_auto_install" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+                  <div>
+                    <p class="text-sm font-medium text-gray-700" x-text="t.settings?.auto_install || 'Otomatik kurulum'"></p>
+                    <p class="text-xs text-gray-400">Yeni stable sürüm bulunduğunda kurulumu başlatır</p>
+                  </div>
+                </label>
+                <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer hover:border-cyan-300 transition-colors">
+                  <input type="checkbox" x-model="s.update_restart_after_install" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+                  <div>
+                    <p class="text-sm font-medium text-gray-700" x-text="t.settings?.restart_after_update || 'Kurulum sonrası yeniden başlat'"></p>
+                    <p class="text-xs text-gray-400">Web, tünel ve sayaç servislerini yeniden başlatır</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="space-y-4 rounded-xl border border-gray-200 p-4">
+              <h4 class="text-sm font-semibold text-gray-700" x-text="t.settings?.update_actions || 'İşlemler'"></h4>
+              <div class="flex flex-wrap gap-2">
+                <button @click="checkUpdates()" :disabled="checkingUpdates || updateStatus.busy"
+                        class="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                  <span x-text="checkingUpdates ? (t.settings?.checking || 'Kontrol ediliyor') : (t.settings?.check_updates || 'Güncellemeleri Kontrol Et')"></span>
+                </button>
+                <button @click="installLatest()" :disabled="updateStatus.busy || !updateStatus.latest_version"
+                        class="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                  <span x-text="t.settings?.install_latest || 'Son Sürümü Yükle'"></span>
+                </button>
+                <button @click="restartServices()" :disabled="updateStatus.busy"
+                        class="px-4 py-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                  <span x-text="t.settings?.restart_services || 'Servisleri Yeniden Başlat'"></span>
+                </button>
+              </div>
+
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-2">
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600" x-text="t.settings?.target_version || 'Hedef sürüm'"></span>
+                  <span class="font-mono text-gray-800" x-text="versionLabel(updateStatus.target_version)"></span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600" x-text="t.settings?.last_check || 'Son kontrol'"></span>
+                  <span class="text-gray-800" x-text="updateStatus.last_check_at || '-' "></span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-gray-600" x-text="t.settings?.installed_versions || 'Kurulu kayıtlar'"></span>
+                  <span class="text-gray-800" x-text="(updateStatus.installed_versions || []).length"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h4 class="text-sm font-semibold text-gray-700" x-text="t.settings?.available_releases || 'Kullanılabilir Release Listesi'"></h4>
+              <button @click="loadReleases()" :disabled="loadingReleases || updateStatus.busy"
+                      class="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-cyan-300 transition-colors disabled:opacity-50">
+                <span x-text="loadingReleases ? (t.settings?.loading || 'Yükleniyor') : (t.settings?.refresh || 'Yenile')"></span>
+              </button>
+            </div>
+            <div x-show="releases.length === 0" class="text-sm text-gray-400 italic px-1">Release bulunamadı.</div>
+            <div x-show="releases.length > 0" class="space-y-3">
+              <template x-for="release in releases" :key="release.version">
+                <div class="rounded-xl border p-4"
+                     :class="release.is_current ? 'border-green-200 bg-green-50' : 'border-gray-200'">
+                  <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="font-mono text-sm font-semibold text-gray-800" x-text="versionLabel(release.version)"></p>
+                        <span x-show="release.is_current" class="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">Aktif</span>
+                        <span x-show="release.installed && !release.is_current" class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">Kurulu</span>
+                        <span x-show="release.prerelease" class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">Prerelease</span>
+                      </div>
+                      <p class="mt-1 text-xs text-gray-500" x-text="release.published_at || '-' "></p>
+                      <p class="mt-2 text-sm text-gray-600 whitespace-pre-line line-clamp-3" x-text="release.body || (t.settings?.release_notes_empty || 'Release notu bulunmuyor')"></p>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <a :href="release.html_url" target="_blank"
+                         class="px-3 py-2 border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-primary-300 transition-colors">
+                        GitHub
+                      </a>
+                      <button x-show="!release.is_current"
+                              @click="installRelease(release)"
+                              :disabled="updateStatus.busy"
+                              class="px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                              :class="release.installed ? 'bg-orange-50 text-orange-700 hover:bg-orange-100' : 'bg-primary-500 text-white hover:bg-primary-600'"
+                              x-text="release.installed ? (t.settings?.rollback || 'Geri Dön') : (t.settings?.install || 'Yükle')"></button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
-  function settingsPage() {
-      return {
-          activeTab: 'camera',
-          tabs: [
-              {id:'camera', label:'Kamera'},
-              {id:'detector', label:'Algılama'},
-              {id:'counter', label:'Sayım'},
-              {id:'tracker', label:'Takip'},
-              {id:'preprocessing', label:'Ön İşleme'},
-              {id:'goals', label:'Hedefler'},
-              {id:'display', label:'Görünüm'},
-              {id:'system', label:'Sistem'},
-          ],
-          s: {{ settings|tojson|safe }},
-          async init() {
-              // Ensure numeric fields parse correctly
-              ['line_position','roi_top','roi_bottom','conf_threshold','iou_threshold','match_thresh'].forEach(k => {
-                  if (this.s[k]) this.s[k] = parseFloat(this.s[k]);
-              });
-              ['camera_width','camera_height','imgsz','track_buffer','daily_goal','weekly_goal','stream_quality','post_cross_drop','crop_ud','crop_lr'].forEach(k => {
-                  if (this.s[k]) this.s[k] = parseInt(this.s[k]);
-              });
-              ['enable_clahe','enable_stabilization'].forEach(k => {
-                  // DB'den gelen '1'/'0' veya 'true'/'false' değerlerini boolean'a çevir
-                  const v = this.s[k];
-                  this.s[k] = (v === '1' || v === true || v === 'true');
-              });
+function settingsPage() {
+    return {
+        openGroups: {
+            camera: true, detector: false, counter: false, tracker: false,
+            preprocessing: false, goals: false, display: false,
+            optimize: false, system: false,
+        },
+        s: {{ settings|tojson|safe }},
+        availableModels: {{ available_models|tojson|safe }},
+        cameras: [],
+        detectingCameras: false,
+
+        // Optimize
+        optVideo: 'data/demo2.mp4',
+        optExpected: 200,
+        optRunning: false,
+        optDone: false,
+        optProgress: 0,
+        optTotal: 0,
+        optCurrent: '',
+        optResults: [],
+        optParamKeys: [],
+        optBestAcc: 0,
+        optBestFps: 0,
+        optLastAcc: 0,
+        optLastFps: 0,
+        optPollTimer: null,
+        currentVersion: {{ current_version|tojson|safe }},
+        updateStatus: {
+          state: 'idle',
+          message: '',
+          current_version: null,
+          latest_version: null,
+          target_version: null,
+          update_available: false,
+          busy: false,
+          last_check_at: null,
+          error: null,
+          installed_versions: [],
+        },
+        releases: [],
+        loadingReleases: false,
+        checkingUpdates: false,
+        updatePollTimer: null,
+
+        async init() {
+            ['line_position','roi_top','roi_bottom','conf_threshold','iou_threshold','match_thresh'].forEach(k => {
+                if (this.s[k] !== undefined) this.s[k] = parseFloat(this.s[k]);
+            });
+            ['camera_width','camera_height','imgsz','track_buffer','daily_goal','weekly_goal','stream_quality','post_cross_drop','crop_ud','crop_lr'].forEach(k => {
+                if (this.s[k] !== undefined) this.s[k] = parseInt(this.s[k]);
+            });
+          ['enable_clahe','enable_stabilization','update_include_prerelease','update_auto_check','update_auto_install','update_restart_after_install'].forEach(k => {
+                const v = this.s[k];
+                this.s[k] = (v === '1' || v === true || v === 'true');
+            });
+          await this.loadUpdateStatus();
+          await this.loadReleases();
+          this.updatePollTimer = setInterval(() => this.loadUpdateStatus(), 5000);
+        },
+
+        toggleGroup(name) { this.openGroups[name] = !this.openGroups[name]; },
+
+        currentTheme() { return localStorage.getItem('app-theme') || 'system'; },
+
+        setThemeAndSave(theme) {
+            // update global theme immediately
+            if (typeof applyTheme === 'function') applyTheme(theme);
+            localStorage.setItem('app-theme', theme);
+            // sync root Alpine component if available
+            const appEl = document.querySelector('[x-data="app()"]');
+            if (appEl && appEl.__x && appEl.__x.$data) {
+                appEl.__x.$data.theme = theme;
+            }
+        },
+
+        async detectCameras() {
+            this.detectingCameras = true;
+            try {
+                const r = await fetch('/api/sources/cameras');
+                this.cameras = await r.json();
+                if (this.cameras.length === 0) showToast('Kamera bulunamadı', 'warning');
+            } catch(e) { showToast('Kamera tarama hatası', 'error'); }
+            finally {
+                this.detectingCameras = false;
+                this.$nextTick(() => lucide.createIcons());
+            }
+        },
+
+        async saveAll() {
+          const boolFields = [
+            'enable_clahe', 'enable_stabilization',
+            'update_include_prerelease', 'update_auto_check',
+            'update_auto_install', 'update_restart_after_install'
+          ];
+            const body = {};
+            Object.entries(this.s).forEach(([k, v]) => {
+                body[k] = boolFields.includes(k)
+                    ? ((v === true || v === '1' || v === 'true') ? '1' : '0')
+                    : String(v);
+            });
+            const r = await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const d = await r.json();
+            if (d.ok) {
+                if (parseInt(this.s.daily_goal) >= 0)
+                    await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify({type:'daily',target:parseInt(this.s.daily_goal)})});
+                if (parseInt(this.s.weekly_goal) >= 0)
+                    await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify({type:'weekly',target:parseInt(this.s.weekly_goal)})});
+                showToast(this.t?.settings?.saved || 'Ayarlar kaydedildi', 'success');
+            } else showToast('Kaydetme hatası', 'error');
+        },
+
+          async saveUpdateSettings(silent = true) {
+            const keys = [
+              'update_repo_owner', 'update_repo_name', 'update_channel',
+              'update_include_prerelease', 'update_auto_check',
+              'update_auto_install', 'update_restart_after_install'
+            ];
+            const boolFields = [
+              'update_include_prerelease', 'update_auto_check',
+              'update_auto_install', 'update_restart_after_install'
+            ];
+            const body = {};
+            keys.forEach((key) => {
+              if (!(key in this.s)) return;
+              const value = this.s[key];
+              body[key] = boolFields.includes(key)
+                ? ((value === true || value === '1' || value === 'true') ? '1' : '0')
+                : String(value ?? '');
+            });
+            const res = await fetch('/api/settings', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (!data.ok) {
+              throw new Error('Update settings save failed');
+            }
+            if (!silent) {
+              showToast(this.t?.settings?.saved || 'Ayarlar kaydedildi', 'success');
+            }
           },
-          async saveAll() {
-              const boolFields = ['enable_clahe', 'enable_stabilization'];
-              const body = {};
-              Object.entries(this.s).forEach(([k,v]) => {
-                  if (boolFields.includes(k)) {
-                      // Boolean değerleri '1'/'0' olarak kaydet (backend beklentisi)
-                      body[k] = (v === true || v === '1' || v === 'true') ? '1' : '0';
-                  } else {
-                      body[k] = String(v);
-                  }
-              });
-              const r = await fetch('/api/settings',{
-                  method:'POST',
-                  headers:{'Content-Type':'application/json'},
-                  body: JSON.stringify(body)
-              });
-              const d = await r.json();
-              if (d.ok) {
-                  // Also save goals
-                  if (parseInt(this.s.daily_goal) >= 0) {
-                      await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
-                          body:JSON.stringify({type:'daily',target:parseInt(this.s.daily_goal)})});
-                  }
-                  if (parseInt(this.s.weekly_goal) >= 0) {
-                      await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
-                          body:JSON.stringify({type:'weekly',target:parseInt(this.s.weekly_goal)})});
-                  }
-                  showToast(this.t?.settings?.saved || 'Ayarlar kaydedildi','success');
-              } else showToast('Kaydetme hatası','error');
-          },
-          async setLang(lang) {
-              await fetch('/api/settings/language',{
-                  method:'POST',
-                  headers:{'Content-Type':'application/json'},
-                  body: JSON.stringify({language: lang})
-              });
-              location.reload();
-          },
-          async rollback(vid) {
-              if (!confirm('Bu sürüme geri dönmek istediğinize emin misiniz?')) return;
-              await fetch('/api/versions/'+vid+'/rollback',{method:'POST'});
-              showToast('Sürüm geri alındı','success');
-              location.reload();
+
+        async setLang(lang) {
+            await fetch('/api/settings/language', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({language: lang})
+            });
+            location.reload();
+        },
+
+        versionLabel(value) {
+          if (!value) return '-';
+          const raw = String(value);
+          return raw.startsWith('v') ? raw : `v${raw}`;
+        },
+
+        async loadUpdateStatus() {
+          try {
+            const res = await fetch('/api/update/status');
+            this.updateStatus = await res.json();
+          } catch (e) {
+            this.updateStatus.error = 'Durum alınamadı';
           }
-      }
-  }
+        },
+
+        async loadReleases() {
+          this.loadingReleases = true;
+          try {
+            const params = this.s.update_include_prerelease ? '?include_prerelease=true' : '';
+            const res = await fetch(`/api/update/releases${params}`);
+            const data = await res.json();
+            if (data.ok) {
+              this.releases = data.releases || [];
+            } else {
+              showToast(data.error || 'Release listesi alınamadı', 'error');
+            }
+          } catch (e) {
+            showToast('Release listesi alınamadı', 'error');
+          } finally {
+            this.loadingReleases = false;
+          }
+        },
+
+        async checkUpdates() {
+          this.checkingUpdates = true;
+          try {
+            await this.saveUpdateSettings(true);
+            const res = await fetch('/api/update/check', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                include_prerelease: !!this.s.update_include_prerelease,
+                notify: true,
+              })
+            });
+            const data = await res.json();
+            if (data.ok && data.update_available) {
+              showToast(`Yeni sürüm bulundu: ${this.versionLabel(data.latest_version)}`, 'success');
+            } else if (data.ok) {
+              showToast(this.t?.settings?.up_to_date || 'Sistem güncel', 'info');
+            } else {
+              showToast(data.error || 'Kontrol hatası', 'error');
+            }
+            await this.loadUpdateStatus();
+            await this.loadReleases();
+          } catch (e) {
+            showToast('Kontrol hatası', 'error');
+          } finally {
+            this.checkingUpdates = false;
+          }
+        },
+
+        async installLatest() {
+          if (!this.updateStatus.latest_version) return;
+          const confirmed = confirm(`${this.versionLabel(this.updateStatus.latest_version)} sürümü kurulacak. Devam edilsin mi?`);
+          if (!confirmed) return;
+          await this.installVersion(this.updateStatus.latest_version, false);
+        },
+
+        async installRelease(release) {
+          const isRollback = !!release.installed;
+          const prompt = isRollback
+            ? `${this.versionLabel(release.version)} sürümüne geri dönülecek. Devam edilsin mi?`
+            : `${this.versionLabel(release.version)} sürümü kurulacak. Devam edilsin mi?`;
+          if (!confirm(prompt)) return;
+          await this.installVersion(release.version, isRollback);
+        },
+
+        async installVersion(version, rollback = false) {
+          try {
+            await this.saveUpdateSettings(true);
+            const endpoint = rollback ? '/api/update/rollback' : '/api/update/install';
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                version,
+                restart_after: !!this.s.update_restart_after_install,
+              })
+            });
+            const data = await res.json();
+            if (data.ok) {
+              showToast(rollback ? 'Rollback başlatıldı' : 'Kurulum başlatıldı', 'success', 5000);
+              await this.loadUpdateStatus();
+            } else {
+              showToast(data.error || 'İşlem başlatılamadı', 'error');
+            }
+          } catch (e) {
+            showToast('İşlem başlatılamadı', 'error');
+          }
+        },
+
+        async restartServices() {
+          if (!confirm('Servisler yeniden başlatılsın mı?')) return;
+          try {
+            const res = await fetch('/api/update/restart', {method: 'POST'});
+            const data = await res.json();
+            if (data.ok) {
+              showToast('Servis yeniden başlatma işlemi başlatıldı', 'success');
+              await this.loadUpdateStatus();
+            } else {
+              showToast(data.error || 'Servisler yeniden başlatılamadı', 'error');
+            }
+          } catch (e) {
+            showToast('Servisler yeniden başlatılamadı', 'error');
+          }
+        },
+
+        async startOptimize() {
+            this.optParamKeys = [];
+            this.optRunning = true;
+            this.optDone = false;
+            this.optResults = [];
+            this.optProgress = 0;
+            this.optTotal = 0;
+            this.optCurrent = 'Başlatılıyor...';
+            const r = await fetch('/api/optimize/start', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({video: this.optVideo, expected: parseInt(this.optExpected)})
+            });
+            const d = await r.json();
+            if (!d.ok) { showToast(d.error || 'Başlatma hatası', 'error'); this.optRunning = false; return; }
+            this.optPollTimer = setInterval(() => this.pollOptimize(), 1500);
+        },
+
+        async pollOptimize() {
+            try {
+                const r = await fetch('/api/optimize/status');
+                const d = await r.json();
+                this.optProgress = d.progress || 0;
+                this.optTotal = d.total || 0;
+                this.optCurrent = d.current || '';
+                this.optResults = d.results || [];
+                // determine param columns
+                const keys = new Set();
+                this.optResults.forEach(r => Object.keys(r.params || {}).forEach(k => keys.add(k)));
+                this.optParamKeys = Array.from(keys);
+                this.optBestAcc = d.best_accuracy || 0;
+                this.optBestFps = d.best_fps || 0;
+                this.optLastAcc = d.last_accuracy || 0;
+                this.optLastFps = d.last_fps || 0;
+                if (!d.running) {
+                    this.optRunning = false;
+                    this.optDone = d.done || false;
+                    clearInterval(this.optPollTimer);
+                    if (d.done) showToast('Optimizasyon tamamlandı!', 'success');
+                    if (d.error) showToast(d.error, 'error');
+                }
+            } catch(e) {}
+        },
+
+        async cancelOptimize() {
+            await fetch('/api/optimize/cancel', {method: 'POST'});
+            clearInterval(this.optPollTimer);
+            this.optRunning = false;
+        },
+
+        async applyOptResult(r) {
+            // Gönderilecek ayarlar artık r.params içinden alınır ve
+            // booleans doğru şekilde string'e çevrilir.
+            const boolFields = ['enable_clahe', 'enable_stabilization'];
+            const body = {};
+            Object.entries(r.params || {}).forEach(([k, v]) => {
+                if (boolFields.includes(k)) {
+                    body[k] = (v === true || v === '1' || v === 'true') ? '1' : '0';
+                } else {
+                    body[k] = String(v);
+                }
+            });
+
+            const res = await fetch('/api/optimize/apply', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            const d = await res.json();
+            if (d.ok) {
+                // UI içindeki ayarları tüm parametrelerle senkronize et
+                Object.entries(r.params || {}).forEach(([k, v]) => {
+                    // sayfalarda gösterilen değer türüne göre dönüştür
+                    if (boolFields.includes(k)) {
+                        this.s[k] = (v === true || v === '1' || v === 'true');
+                    } else if (['imgsz','track_buffer','skip_frames','crop_ud','crop_lr']
+                               .includes(k)) {
+                        this.s[k] = parseInt(v);
+                    } else if (['conf_threshold','iou_threshold','line_position',
+                                'roi_top','roi_bottom','match_thresh'].includes(k)) {
+                        this.s[k] = parseFloat(v);
+                    } else {
+                        this.s[k] = v;
+                    }
+                });
+                showToast('Ayarlar uygulandı ✓', 'success');
+            } else showToast('Uygulama hatası', 'error');
+        },
+    };
+}
 </script>

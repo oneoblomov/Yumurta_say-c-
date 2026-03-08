@@ -9,6 +9,7 @@ import io
 import csv
 import json
 import asyncio
+import subprocess
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -25,6 +26,8 @@ from fastapi.templating import Jinja2Templates
 
 from .database import Database
 from .pipeline_manager import PipelineManager
+from .update_manager import UpdateManager
+from .versioning import display_version, read_version
 from .i18n import (
     load_translations, t, get_all_translations,
     SUPPORTED_LANGUAGES, DEFAULT_LANG,
@@ -34,7 +37,7 @@ from .i18n import (
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 
-app = FastAPI(title="Yumurta Sayıcı", version="1.0.0")
+app = FastAPI(title="Yumurta Sayıcı", version=read_version())
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")),
           name="static")
 
@@ -43,6 +46,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 # Global instances
 db = Database()
 pipeline = PipelineManager(db)
+update_manager = UpdateManager(db)
 
 # WebSocket connections
 ws_connections: List[WebSocket] = []
@@ -74,6 +78,24 @@ def _ctx(request: Request, **extra) -> dict:
 
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("HX-Request") == "true"
+
+
+def _launch_update_command(*args: str) -> None:
+    script_path = ROOT_DIR / "update_and_restart.sh"
+    log_path = ROOT_DIR / "logs" / "update-command.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_handle = open(log_path, "a", encoding="utf-8")
+    try:
+        subprocess.Popen(
+            ["/bin/bash", str(script_path), *args],
+            cwd=str(ROOT_DIR),
+            stdout=log_handle,
+            stderr=log_handle,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        log_handle.close()
 
 
 # ============================================================ Pages
@@ -141,6 +163,24 @@ async def stats_page(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
+    # List available models from disk
+    models_dir = ROOT_DIR / "models"
+    available_models = []
+    if models_dir.exists():
+        for f in sorted(models_dir.rglob("*.pt")):
+            available_models.append({
+                "path": str(f.relative_to(ROOT_DIR)),
+                "name": f.name,
+                "type": "pytorch",
+            })
+        for f in sorted(models_dir.rglob("best.xml")):
+            d = f.parent
+            available_models.append({
+                "path": str(d.relative_to(ROOT_DIR)),
+                "name": d.name,
+                "type": "openvino",
+            })
+
     ctx = _ctx(
         request,
         page="settings",
@@ -148,6 +188,8 @@ async def settings_page(request: Request):
         settings=db.get_settings(),
         versions=db.get_versions(),
         active_version=db.get_active_version(),
+        available_models=available_models,
+        current_version=display_version(read_version()),
     )
     if _is_htmx(request):
         return templates.TemplateResponse("partials/settings.html", ctx)
@@ -552,3 +594,411 @@ async def api_add_version(request: Request):
 async def api_rollback(vid: int):
     ok = db.rollback_version(vid)
     return JSONResponse({"ok": ok})
+
+
+@app.get("/api/update/status")
+async def api_update_status():
+    return JSONResponse(update_manager.get_status())
+
+
+@app.get("/api/update/releases")
+async def api_update_releases(include_prerelease: Optional[bool] = None):
+    try:
+        releases = update_manager.list_releases(include_prerelease=include_prerelease)
+        return JSONResponse({"ok": True, "releases": releases})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "releases": []}, status_code=503)
+
+
+@app.post("/api/update/check")
+async def api_update_check(request: Request):
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    result = update_manager.check_for_updates(
+        notify=body.get("notify", True),
+        include_prerelease=body.get("include_prerelease"),
+    )
+    return JSONResponse({"ok": result.get("error") is None, **result})
+
+
+@app.post("/api/update/install")
+async def api_update_install(request: Request):
+    body = await request.json()
+    status = update_manager.get_status()
+    if status.get("busy"):
+        return JSONResponse({"ok": False, "error": "Başka bir güncelleme işlemi çalışıyor"}, status_code=409)
+    args = ["install"]
+    version = body.get("version")
+    if version:
+        args.extend(["--version", str(version)])
+    if body.get("restart_after", True):
+        args.append("--restart")
+    _launch_update_command(*args)
+    return JSONResponse({"ok": True, "started": True, "target_version": version})
+
+
+@app.post("/api/update/rollback")
+async def api_update_rollback(request: Request):
+    body = await request.json()
+    version = body.get("version")
+    if not version:
+        return JSONResponse({"ok": False, "error": "Sürüm bilgisi gerekli"}, status_code=400)
+    status = update_manager.get_status()
+    if status.get("busy"):
+        return JSONResponse({"ok": False, "error": "Başka bir güncelleme işlemi çalışıyor"}, status_code=409)
+    args = ["rollback", "--version", str(version)]
+    if body.get("restart_after", True):
+        args.append("--restart")
+    _launch_update_command(*args)
+    return JSONResponse({"ok": True, "started": True, "target_version": version})
+
+
+@app.post("/api/update/restart")
+async def api_update_restart():
+    status = update_manager.get_status()
+    if status.get("busy"):
+        return JSONResponse({"ok": False, "error": "Önce aktif güncelleme işlemi bitsin"}, status_code=409)
+    _launch_update_command("restart")
+    return JSONResponse({"ok": True, "started": True})
+
+
+# ============================================================ API: Models
+@app.get("/api/models")
+async def api_list_models():
+    """Mevcut model dosyalarını listele."""
+    models_dir = ROOT_DIR / "models"
+    result = []
+    if models_dir.exists():
+        # PyTorch models (.pt)
+        for f in sorted(models_dir.rglob("*.pt")):
+            try:
+                size_mb = round(f.stat().st_size / 1024 / 1024, 1)
+            except Exception:
+                size_mb = 0
+            result.append({
+                "path": str(f.relative_to(ROOT_DIR)),
+                "name": f.name,
+                "type": "pytorch",
+                "size_mb": size_mb,
+            })
+        # OpenVINO model directories (contain best.xml)
+        for f in sorted(models_dir.rglob("best.xml")):
+            d = f.parent
+            try:
+                size_mb = round(
+                    sum(x.stat().st_size for x in d.iterdir() if x.is_file())
+                    / 1024 / 1024, 1
+                )
+            except Exception:
+                size_mb = 0
+            result.append({
+                "path": str(d.relative_to(ROOT_DIR)),
+                "name": d.name,
+                "type": "openvino",
+                "size_mb": size_mb,
+            })
+    return JSONResponse(result)
+
+
+# ============================================================ API: Camera Sources
+@app.get("/api/sources/cameras")
+async def api_list_cameras():
+    """Kullanılabilir kamera cihazlarını listele."""
+    import cv2 as _cv2
+    cameras = []
+    for i in range(6):
+        cap = _cv2.VideoCapture(i)
+        if cap.isOpened():
+            w = int(cap.get(_cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(_cv2.CAP_PROP_FRAME_HEIGHT))
+            cameras.append({
+                "index": i,
+                "value": str(i),
+                "label": f"Kamera {i} ({w}×{h})",
+            })
+            cap.release()
+    return JSONResponse(cameras)
+
+
+# ============================================================ API: Optimize
+import threading as _threading
+
+_optimize_state: Dict = {
+    "running": False, "progress": 0, "total": 0,
+    "current": "", "results": [], "error": None, "done": False,
+    "last_accuracy": 0, "last_fps": 0, "best_accuracy": 0, "best_fps": 0
+}
+_optimize_lock = _threading.Lock()
+
+
+@app.get("/api/optimize/status")
+async def api_optimize_status():
+    with _optimize_lock:
+        # JSONResponse'a geçmeden önce yüzeysel kopya al (race condition önlemi)
+        return JSONResponse(dict(_optimize_state))
+
+
+@app.post("/api/optimize/start")
+async def api_optimize_start(request: Request):
+    global _optimize_state
+    with _optimize_lock:
+        if _optimize_state.get("running"):
+            return JSONResponse({"ok": False, "error": "Optimizasyon zaten çalışıyor"})
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    video_path = body.get("video", str(ROOT_DIR / "data" / "demo.mp4"))
+    expected = int(body.get("expected", 200))
+    with _optimize_lock:
+        _optimize_state = {
+            "running": True, "progress": 0, "total": 0,
+            "current": "Başlatılıyor...", "results": [],
+            "error": None, "done": False,
+            "last_accuracy": 0, "last_fps": 0, "best_accuracy": 0, "best_fps": 0
+        }
+    asyncio.create_task(_optimize_background(video_path, expected))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/optimize/cancel")
+async def api_optimize_cancel():
+    global _optimize_state
+    with _optimize_lock:
+        _optimize_state["running"] = False
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/optimize/apply")
+async def api_optimize_apply(request: Request):
+    # gelen tüm anahtarları ayarlara yaz
+    body = await request.json()
+    settings_to_save = {k: str(v) for k, v in body.items()}
+    db.set_settings_bulk(settings_to_save)
+    return JSONResponse({"ok": True, "applied": settings_to_save})
+
+
+async def _optimize_background(video_path: str, expected: int):
+    """Bayesian Optimization (Optuna) kullanarak parametreleri optimize et."""
+    global _optimize_state
+    import optuna
+
+    # Optuna loglarını sustur (sadece hata mesajları)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    # Toplam deneme sayısı (Bütçe)
+    n_trials = 100
+    with _optimize_lock:
+        _optimize_state["total"] = n_trials
+        _optimize_state["results"] = []  # Listeyi temizle
+
+    loop = asyncio.get_event_loop()
+    results = []
+
+    def objective(trial):
+        # Durdurma kontrolü (Kullanıcı iptal ettiyse)
+        with _optimize_lock:
+            if not _optimize_state.get("running"):
+                trial.study.stop()
+                return 0.0
+
+        # Parametre Uzayı Tanımı (Bayesian Arama için)
+        params = {
+            "conf_threshold": trial.suggest_float("conf_threshold", 0.15, 0.50, step=0.05),
+            "iou_threshold": trial.suggest_float("iou_threshold", 0.20, 0.60, step=0.05),
+            "line_position": trial.suggest_float("line_position", 0.30, 0.70, step=0.05),
+            "tracker_type": trial.suggest_categorical("tracker_type", ["bytetrack", "botsort"]),
+            "imgsz": trial.suggest_categorical("imgsz", [320, 480, 640]),
+            "track_buffer": trial.suggest_int("track_buffer", 30, 150, step=30),
+            "match_thresh": trial.suggest_float("match_thresh", 0.70, 0.95, step=0.05),
+            "skip_frames": trial.suggest_int("skip_frames", 0, 2),
+            "crop_ud": trial.suggest_int("crop_ud", 0, 20, step=5),
+            "crop_lr": trial.suggest_int("crop_lr", 0, 20, step=5),
+            "enable_clahe": trial.suggest_categorical("enable_clahe", [True, False]),
+            "enable_stabilization": trial.suggest_categorical("enable_stabilization", [True, False]),
+            "roi_top": trial.suggest_float("roi_top", 0.15, 0.40, step=0.05),
+            "roi_bottom": trial.suggest_float("roi_bottom", 0.60, 0.85, step=0.05),
+        }
+
+        # UI Güncelleme (Hangi kombinasyonun denendiğini göster)
+        with _optimize_lock:
+            _optimize_state["progress"] = trial.number
+            desc = (
+                f"Deneme {trial.number+1}/{n_trials}: "
+                f"conf={params['conf_threshold']} imgsz={params['imgsz']} tracker={params['tracker_type']}"
+            )
+            _optimize_state["current"] = desc
+
+        try:
+            # Senkron fonksiyonu çalıştır
+            result = _count_video_sync(video_path, params)
+            count = result.get("count", -1)
+            
+            if count >= 0:
+                error = abs(count - expected)
+                accuracy = round(max(0, 100 - (error / max(1, expected)) * 100), 1)
+                fps = result.get("fps", 0)
+
+                out = {
+                    "params": params.copy(),
+                    "count": count,
+                    "expected": expected,
+                    "error": error,
+                    "accuracy": accuracy,
+                    "fps": fps,
+                    "conf": params["conf_threshold"],
+                    "iou": params["iou_threshold"],
+                    "line_position": params["line_position"],
+                    "tracker_type": params["tracker_type"]
+                }
+                results.append(out)
+
+                # Sıralama ve UI Güncelleme
+                with _optimize_lock:
+                    _optimize_state["last_accuracy"] = accuracy
+                    _optimize_state["last_fps"] = fps
+                    # Tüm sonuçları tut (15 sınırı kaldırıldı)
+                    results.sort(key=lambda x: (-x["accuracy"], -x["fps"]))
+                    for rank_i, r in enumerate(results):
+                        r["rank"] = rank_i + 1
+                    _optimize_state["results"] = results.copy() 
+                    _optimize_state["best_accuracy"] = results[0]["accuracy"] if results else 0
+                    _optimize_state["best_fps"] = results[0]["fps"] if results else 0
+
+                # Bayesian Hedef: Doğruluğu maksimize et, yüksek FPS'i ödüllendir
+                # score = -accuracy + weight * -fps (minimize modunda)
+                score = -accuracy - (0.01 * fps)
+                return score
+            
+            return 1000.0  # Hatalı deneme için kötü skor
+        except Exception:
+            return 1000.0
+
+    try:
+        # Optuna Study oluştur (TPESampler varsayılan Bayesian örneklendiricidir)
+        study = optuna.create_study(direction="minimize")
+        # Optuna'yı ayrı bir thread'de çalıştır (IO/CPU bound karmaşasını önlemek adına executor kullanılır)
+        await loop.run_in_executor(None, study.optimize, objective, n_trials)
+    except Exception as e:
+        with _optimize_lock:
+            _optimize_state["error"] = str(e)
+
+    with _optimize_lock:
+        _is_cancelled = not _optimize_state.get("running")
+        _optimize_state["running"] = False
+        _optimize_state["done"] = True
+        _optimize_state["progress"] = n_trials
+        _optimize_state["current"] = "İptal Edildi" if _is_cancelled else "Tamamlandı"
+
+
+def _count_video_sync(
+    video_path: str, params: dict,
+) -> dict:
+    """Videoyu minimal pipeline ile işle ve toplam sayımı döndür (sync, threadsafe).
+
+    `params` sözlüğü optimize edilmiş değerleri içerir; fonksiyon bu anahtarları
+    uygun konfigürasyon objelerine geçirir ve pipeline'ı çalıştırır.
+    """
+    import cv2 as _cv2
+    import time as _time
+
+    try:
+        from egg_counter.config import (
+            DetectorConfig, TrackerConfig, CounterConfig, PipelineConfig,
+        )
+        from egg_counter.detector import EggDetector
+        from egg_counter.tracker import TrackManager
+        from egg_counter.counter import CountingLine
+
+        s = db.get_settings()
+        model_path = s.get("model_path", "models/yolo26n_mod/a3_best_openvino_model")
+
+        # detector
+        cfg_det = DetectorConfig(
+            model_path=model_path,
+            imgsz=params.get("imgsz", 480),
+            conf_threshold=params.get("conf_threshold", 0.30),
+            iou_threshold=params.get("iou_threshold", 0.45),
+            enable_clahe=params.get("enable_clahe", False),
+            enable_stabilization=params.get("enable_stabilization", False),
+        )
+
+        # tracker
+        cfg_trk = TrackerConfig(
+            tracker_type=params.get("tracker_type", "bytetrack"),
+            track_buffer=params.get("track_buffer", 90),
+            match_thresh=params.get("match_thresh", 0.85),
+        )
+
+        # counter
+        cfg_ctr = CounterConfig(
+            line_position=params.get("line_position", 0.5),
+            direction="both",
+            roi_top_position=params.get("roi_top", 0.35),
+            roi_bottom_position=params.get("roi_bottom", 0.65),
+        )
+
+        # pipeline
+        cfg_pipe = PipelineConfig(
+            skip_frames=params.get("skip_frames", 0),
+            crop_ud=params.get("crop_ud", 0),
+            crop_lr=params.get("crop_lr", 0),
+        )
+
+        # video mı yoksa resim mi olduğuna bak
+        path = str(video_path)
+        ext = path.lower().rsplit('.', 1)[-1] if '.' in path else ''
+        is_image = ext in ('jpg', 'jpeg', 'png', 'bmp', 'tif', 'tiff')
+
+        if is_image:
+            t0 = _time.time()
+            frame = _cv2.imread(path)
+            if frame is None:
+                return {"count": -1, "error": f"Resim açılamadı: {path}"}
+
+            detector = EggDetector(cfg_det, cfg_trk)
+
+            # tespitleri al ve say
+            raw = detector.detect_and_track(frame)
+            detections = detector.parse_results(raw)
+            total = len(detections)
+
+            elapsed = max(0.001, _time.time() - t0)
+            return {"count": total, "fps": round(1.0 / elapsed, 1), "frames": 1}
+        else:
+            cap = _cv2.VideoCapture(path)
+            if not cap.isOpened():
+                return {"count": -1, "error": f"Video açılamadı: {path}"}
+
+            fps_v = cap.get(_cv2.CAP_PROP_FPS) or 30
+            h = int(cap.get(_cv2.CAP_PROP_FRAME_HEIGHT))
+
+            detector = EggDetector(cfg_det, cfg_trk)
+            track_mgr = TrackManager(cfg_trk, cfg_ctr, trail_length=20)
+            counter = CountingLine(cfg_ctr, frame_height=h)
+
+            total = 0
+            frames = 0
+            t0 = _time.time()
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                raw = detector.detect_and_track(frame)
+                detections = detector.parse_results(raw)
+                enriched = track_mgr.update(detections)
+                events = counter.check_crossings(enriched, track_mgr)
+                total += len(events)
+                frames += 1
+
+            cap.release()
+            elapsed = max(0.01, _time.time() - t0)
+            return {"count": total, "fps": round(frames / elapsed, 1), "frames": frames}
+
+    except Exception as e:
+        return {"count": -1, "error": str(e)}

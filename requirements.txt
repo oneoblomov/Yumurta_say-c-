@@ -6,3 +6,6 @@ numpy
 jinja2
 python-multipart
 aiofiles
+openpyxl
+fpdf2
+optuna

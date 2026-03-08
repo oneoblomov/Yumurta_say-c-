@@ -24,6 +24,7 @@ class Database:
         self.db_path = str(db_path or DB_PATH)
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
+        self._migrate_schema()
         self._init_default_settings()
 
     # ------------------------------------------------------------------ conn
@@ -126,6 +127,22 @@ class Database:
         """)
         self.conn.commit()
 
+    def _migrate_schema(self):
+        self._ensure_column("app_versions", "package_path", "TEXT")
+        self._ensure_column("app_versions", "release_url", "TEXT")
+        self._ensure_column("app_versions", "release_published_at", "TEXT")
+        self._ensure_column("app_versions", "installed_by", "TEXT DEFAULT 'manual'")
+
+    def _ensure_column(self, table_name: str, column_name: str, column_def: str):
+        columns = {
+            row[1] for row in self.conn.execute(f"PRAGMA table_info({table_name})")
+        }
+        if column_name not in columns:
+            self.conn.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"
+            )
+            self.conn.commit()
+
     def _init_default_settings(self):
         defaults = [
             # Camera
@@ -161,6 +178,20 @@ class Database:
             ("language", "tr", "display", "Arayüz dili"),
             ("theme", "light", "display", "Tema"),
             ("stream_quality", "70", "display", "Video akış kalitesi"),
+            # Update
+            ("update_repo_owner", "oneoblomov", "update", "GitHub sahip hesabı"),
+            ("update_repo_name", "Yumurta_say-c-", "update", "GitHub depo adı"),
+            ("update_channel", "stable", "update", "Güncelleme kanalı"),
+            ("update_include_prerelease", "0", "update", "Ön sürümleri dahil et"),
+            ("update_auto_check", "1", "update", "Otomatik güncelleme kontrolü"),
+            ("update_auto_install", "0", "update", "Yeni sürümü otomatik kur"),
+            ("update_restart_after_install", "1", "update", "Kurulum sonrası servisleri yeniden başlat"),
+            ("update_last_check_at", "", "update", "Son güncelleme kontrol zamanı"),
+            ("update_last_available_version", "", "update", "Bulunan son sürüm"),
+            ("update_last_check_status", "", "update", "Son kontrol sonucu"),
+            ("update_last_error", "", "update", "Son güncelleme hatası"),
+            ("update_last_notified_version", "", "update", "Bildirim gönderilen son sürüm"),
+            ("update_last_installed_version", "", "update", "Kurulan son sürüm"),
             # Test Mode
             ("show_test_page", "1", "test", "Test sayfasını menüde göster"),
             ("test_mode_enabled", "1", "test", "5 sn test penceresi analizi"),
@@ -575,12 +606,25 @@ class Database:
 
     # ============================================================ Versions
     def add_version(self, version: str, changelog: str = None,
-                    backup_path: str = None):
+                    backup_path: str = None,
+                    package_path: str = None,
+                    release_url: str = None,
+                    release_published_at: str = None,
+                    installed_by: str = "manual"):
         self.conn.execute("UPDATE app_versions SET is_active=0")
         self.conn.execute(
             "INSERT INTO app_versions "
-            "(version,changelog,is_active,backup_path) VALUES (?,?,1,?)",
-            (version, changelog, backup_path),
+            "(version,changelog,is_active,backup_path,package_path,release_url,release_published_at,installed_by) "
+            "VALUES (?,?,1,?,?,?,?,?)",
+            (
+                version,
+                changelog,
+                backup_path,
+                package_path,
+                release_url,
+                release_published_at,
+                installed_by,
+            ),
         )
         self.conn.commit()
 

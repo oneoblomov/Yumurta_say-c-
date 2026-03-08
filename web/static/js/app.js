@@ -2,7 +2,7 @@
  * app.js - Alpine.js Ana Uygulama
  * =================================
  * WebSocket bağlantısı, global state yönetimi,
- * toast bildirimleri ve yardımcı fonksiyonlar.
+ * toast bildirimleri, tema ve yardımcı fonksiyonlar.
  */
 
 // ============================================================ Toast
@@ -16,16 +16,59 @@ function showToast(message, type = 'info', duration = 3000) {
             return;
         }
     }
-    // Fallback: console
     console.log(`[${type.toUpperCase()}] ${message}`);
 }
+
+// ============================================================ Theme Helpers
+function getStoredTheme() {
+    return localStorage.getItem('app-theme') || 'system';
+}
+
+function applyTheme(theme) {
+    const html = document.documentElement;
+    const body = document.body;
+    const setClass = (add) => {
+        if (add) {
+            html.classList.add('dark');
+            body.classList.add('dark');
+        } else {
+            html.classList.remove('dark');
+            body.classList.remove('dark');
+        }
+    };
+
+    if (theme === 'dark') {
+        setClass(true);
+    } else if (theme === 'light') {
+        setClass(false);
+    } else {
+        // system: follow prefers-color-scheme
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setClass(prefersDark);
+    }
+    localStorage.setItem('app-theme', theme);
+}
+
+// Apply theme immediately on page load (before Alpine init) to avoid flash
+(function () {
+    applyTheme(getStoredTheme());
+})();
+
+// Listen for system theme changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getStoredTheme() === 'system') applyTheme('system');
+});
 
 // ============================================================ Alpine App
 function app() {
     return {
         // Sidebar
         sidebarOpen: false,
+        sidebarCollapsed: localStorage.getItem('sidebar-collapsed') === 'true',
         currentPage: 'dashboard',
+
+        // Theme
+        theme: getStoredTheme(),
 
         // Status (updated via WebSocket)
         status: {
@@ -62,6 +105,12 @@ function app() {
             const path = window.location.pathname.replace('/', '') || 'dashboard';
             this.currentPage = path;
 
+            // Apply theme
+            applyTheme(this.theme);
+
+            // Apply sidebar state
+            this._applySidebarCollapsed();
+
             // Start WebSocket
             this.connectWS();
 
@@ -70,6 +119,40 @@ function app() {
 
             // Periodic alert refresh
             setInterval(() => this.fetchAlertCount(), 10000);
+        },
+
+        // ---------------------------------------- Theme
+        setTheme(theme) {
+            this.theme = theme;
+            applyTheme(theme);
+            // Persist to settings (non-blocking)
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme }),
+            }).catch(() => {});
+        },
+
+
+        // ---------------------------------------- Sidebar collapse
+        toggleSidebarCollapsed() {
+            this.sidebarCollapsed = !this.sidebarCollapsed;
+            localStorage.setItem('sidebar-collapsed', this.sidebarCollapsed);
+            this._applySidebarCollapsed();
+        },
+
+
+        _applySidebarCollapsed() {
+            const wrapper = document.getElementById('main-wrapper');
+            if (wrapper) {
+                if (this.sidebarCollapsed) {
+                    wrapper.classList.remove('lg:ml-64');
+                    wrapper.classList.add('lg:ml-16');
+                } else {
+                    wrapper.classList.remove('lg:ml-16');
+                    wrapper.classList.add('lg:ml-64');
+                }
+            }
         },
 
         // ---------------------------------------- WebSocket
@@ -84,19 +167,16 @@ function app() {
                     try {
                         const data = JSON.parse(event.data);
 
-                        // Update status
                         if (data.status) {
                             this.status = { ...this.status, ...data.status };
                         }
 
-                        // Process events
                         if (data.events && data.events.length > 0) {
                             for (const ev of data.events) {
                                 this.handleEvent(ev);
                             }
                         }
 
-                        // Alert count
                         if (data.alert_count !== undefined) {
                             this.alertCount = data.alert_count;
                         }
@@ -105,16 +185,12 @@ function app() {
 
                 this.ws.onclose = () => {
                     this.ws = null;
-                    // Reconnect after 2s
                     if (this.wsReconnectTimer) clearTimeout(this.wsReconnectTimer);
                     this.wsReconnectTimer = setTimeout(() => this.connectWS(), 2000);
                 };
 
-                this.ws.onerror = () => {
-                    this.ws?.close();
-                };
+                this.ws.onerror = () => { this.ws?.close(); };
             } catch (e) {
-                // Fallback: poll status
                 setInterval(() => this.pollStatus(), 1000);
             }
         },
@@ -127,24 +203,18 @@ function app() {
         },
 
         handleEvent(ev) {
-            if (ev.type === 'egg_counted') {
-                // Could play sound, flash, etc.
-            } else if (ev.type === 'alert') {
+            if (ev.type === 'alert') {
                 showToast(ev.message, ev.severity === 'critical' ? 'error' : 'warning');
                 this.fetchAlerts();
             } else if (ev.type === 'goal_reached') {
-                showToast(
-                    `🎯 ${ev.type === 'daily' ? 'Günlük' : 'Haftalık'} hedef tamamlandı!`,
-                    'success',
-                    5000
-                );
+                showToast(`🎯 Hedef tamamlandı!`, 'success', 5000);
             }
         },
 
         // ---------------------------------------- Alerts
         async fetchAlerts() {
             try {
-                const r = await fetch('/api/alerts?unack_only=false&limit=20');
+                const r = await fetch('/api/alerts');
                 this.alerts = await r.json();
                 this.alertCount = this.alerts.filter(a => !a.acknowledged).length;
             } catch (e) { }
@@ -154,7 +224,7 @@ function app() {
             try {
                 const r = await fetch('/api/alerts/count');
                 const d = await r.json();
-                this.alertCount = d.count || 0;
+                this.alertCount = d.count;
             } catch (e) { }
         },
 
@@ -166,39 +236,6 @@ function app() {
         async ackAllAlerts() {
             await fetch('/api/alerts/ack-all', { method: 'POST' });
             this.fetchAlerts();
-        },
-
-        // ---------------------------------------- Language
-        async setLanguage(lang) {
-            await fetch('/api/settings/language', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ language: lang }),
-            });
-            location.reload();
-        },
+        }
     };
 }
-
-// ============================================================ HTMX Events
-document.body.addEventListener('htmx:afterSwap', function () {
-    // Re-create Lucide icons after HTMX content swap
-    if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-    }
-});
-
-// Handle browser back/forward
-window.addEventListener('popstate', function () {
-    const path = window.location.pathname.replace('/', '') || 'dashboard';
-    htmx.ajax('GET', window.location.pathname, {
-        target: '#main-content',
-        swap: 'innerHTML',
-    });
-    // Update sidebar
-    const appEl = document.querySelector('[x-data]');
-    if (appEl?.__x) {
-        const data = appEl.__x.$data || appEl._x_dataStack?.[0];
-        if (data) data.currentPage = path;
-    }
-});

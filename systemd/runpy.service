@@ -1,0 +1,23 @@
+[Unit]
+Description=Yumurta Sayıcı Web Arayüzü
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/kaplan/Desktop/Azim-Tav/Yumurta_sayıcı
+ExecStart=/usr/bin/python3 /home/kaplan/Desktop/Azim-Tav/Yumurta_sayıcı/run_web.py --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=OPENCV_FFMPEG_CAPTURE_OPTIONS=threads;1|fflags;nobuffer
+Environment=OPENCV_FFMPEG_MULTITHREADED=0
+# Hata durumunda otomatik tamir: watchdog ile
+WatchdogSec=30
+# Hata loglaması
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Stop Yumurta Sayıcı Service
+Requires=egg-counter.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl stop egg-counter.service
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

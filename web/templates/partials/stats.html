@@ -121,9 +121,61 @@
 
         <!-- Prediction -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-            <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.prediction || 'Tahmin (Sonraki 7 gün)'"></h3>
-            <div class="h-64">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-sm text-gray-700" x-text="t.stats?.prediction || 'Tahmin (Sonraki 7 gün)'"></h3>
+                <div class="flex gap-1">
+                    <button @click="predModel='exp'; renderPrediction()"
+                            :class="predModel==='exp' ? 'bg-orange-100 border-orange-300 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-orange-200'"
+                            class="px-2 py-1 border rounded-lg text-xs transition-colors"
+                            x-text="t.stats?.exp_smooth || 'Üstel'"></button>
+                    <button @click="predModel='ma'; renderPrediction()"
+                            :class="predModel==='ma' ? 'bg-orange-100 border-orange-300 text-orange-700' : 'border-gray-200 text-gray-500 hover:border-orange-200'"
+                            class="px-2 py-1 border rounded-lg text-xs transition-colors"
+                            x-text="t.stats?.ma_model || 'Har. Ort.'"></button>
+                </div>
+            </div>
+            <div class="h-56">
                 <canvas id="predictionChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Extra Insights Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <!-- Day-of-Week Distribution -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.dow || 'Haftanın Günleri Dağılımı'"></h3>
+            <div class="h-52">
+                <canvas id="dowChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Growth & Variance -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.insights || 'Analizler'"></h3>
+            <div class="space-y-4">
+                <!-- Growth Rate -->
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <p class="text-xs text-gray-500 mb-1" x-text="t.stats?.growth_rate || 'Büyüme Oranı (son 7 vs önceki 7)'"></p>
+                    <div class="flex items-end gap-2">
+                        <p class="text-2xl font-bold"
+                           :class="growthRate > 0 ? 'text-green-600' : growthRate < 0 ? 'text-red-500' : 'text-gray-600'"
+                           x-text="growthRate !== null ? (growthRate > 0 ? '+' : '') + growthRate + '%' : '-'"></p>
+                        <i :data-lucide="growthRate > 0 ? 'trending-up' : growthRate < 0 ? 'trending-down' : 'minus'"
+                           :class="growthRate > 0 ? 'text-green-500' : growthRate < 0 ? 'text-red-500' : 'text-gray-400'"
+                           class="w-5 h-5 mb-1"></i>
+                    </div>
+                </div>
+                <!-- Variance / Std Dev -->
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <p class="text-xs text-gray-500 mb-1" x-text="t.stats?.variance || 'Standart Sapma (son 14 gün)'"></p>
+                    <p class="text-2xl font-bold text-gray-700" x-text="stdDev !== null ? stdDev : '-'"></p>
+                </div>
+                <!-- Peak day of week -->
+                <div class="bg-gray-50 rounded-lg p-3">
+                    <p class="text-xs text-gray-500 mb-1" x-text="t.stats?.best_dow || 'En Verimli Gün'"></p>
+                    <p class="text-lg font-bold text-primary-600" x-text="bestDow || '-'"></p>
+                </div>
             </div>
         </div>
     </div>
@@ -137,6 +189,10 @@ function statsPage() {
         monthlyTrend: {{ monthly_trend|safe }},
         hourlyDist: {{ hourly_dist|safe }},
         charts: {},
+        predModel: 'exp',
+        growthRate: null,
+        stdDev: null,
+        bestDow: null,
         init() {
             this.$nextTick(() => this.renderCharts());
         },
@@ -148,6 +204,8 @@ function statsPage() {
             this.renderMonthlyTrend();
             this.renderHourly();
             this.renderPrediction();
+            this.renderDow();
+            this.computeInsights();
         },
         renderDailyTrend() {
             const el = document.getElementById('dailyTrendChart');
@@ -226,58 +284,215 @@ function statsPage() {
                 }
             });
         },
+        /* ── Prediction helpers ──────────────────────────────────── */
+        _expSmooth(values, alpha) {
+            if (!values.length) return [];
+            const out = [values[0]];
+            for (let i = 1; i < values.length; i++)
+                out.push(alpha * values[i] + (1 - alpha) * out[i-1]);
+            return out;
+        },
+        _movingAvg(values, window) {
+            return values.map((_, i) => {
+                const slice = values.slice(Math.max(0, i - window + 1), i + 1);
+                return slice.reduce((a, b) => a + b, 0) / slice.length;
+            });
+        },
+        _weekdayAvg(d) {
+            const totals = Array(7).fill(0), counts = Array(7).fill(0);
+            d.forEach(x => {
+                const dow = new Date(x.date).getDay();
+                totals[dow] += x.count; counts[dow]++;
+            });
+            return totals.map((t, i) => counts[i] > 0 ? t / counts[i] : null);
+        },
         renderPrediction() {
             const el = document.getElementById('predictionChart');
+            if (this.charts.prediction) { this.charts.prediction.destroy(); this.charts.prediction = null; }
             if (!el) return;
             const d = this.dailyTrend;
             if (d.length < 3) {
-                el.parentElement.innerHTML = '<p class="text-gray-400 text-center mt-16 text-sm">Tahmin için yeterli veri yok (min 3 gün)</p>';
+                el.parentElement.innerHTML = '<p class="text-gray-400 text-center mt-10 text-sm">' + (this.t?.stats?.no_data || 'Tahmin için yeterli veri yok (min 3 gün)') + '</p>';
                 return;
             }
-            // Simple linear regression prediction
-            const counts = d.map(x=>x.count);
+            const counts = d.map(x => x.count);
             const n = counts.length;
-            const xm = (n-1)/2;
-            const ym = counts.reduce((a,b)=>a+b,0)/n;
-            let num=0, den=0;
-            for(let i=0;i<n;i++){num+=(i-xm)*(counts[i]-ym);den+=(i-xm)*(i-xm);}
-            const slope = den!==0 ? num/den : 0;
-            const intercept = ym - slope*xm;
+
+            // Choose model
+            let smoothed, forecastBase, trend;
+            if (this.predModel === 'exp') {
+                // Holt double-exponential smoothing (trend-aware)
+                const alpha = 0.35, beta = 0.15;
+                let s = counts[0], b = counts.length > 1 ? counts[1] - counts[0] : 0;
+                const levs = [s], trends = [b];
+                for (let i = 1; i < n; i++) {
+                    const sNew = alpha * counts[i] + (1 - alpha) * (s + b);
+                    const bNew = beta * (sNew - s) + (1 - beta) * b;
+                    s = sNew; b = bNew;
+                    levs.push(s); trends.push(b);
+                }
+                smoothed = levs;
+                forecastBase = s;
+                trend = b;
+            } else {
+                // Weighted moving average (7-day)
+                const ma = this._movingAvg(counts, 7);
+                smoothed = ma;
+                // Trend from last 7 days linear reg
+                const slice = counts.slice(-7);
+                const m = slice.length;
+                const xm = (m-1)/2, ym = slice.reduce((a,b)=>a+b,0)/m;
+                let num=0,den=0; slice.forEach((v,i)=>{num+=(i-xm)*(v-ym);den+=(i-xm)*(i-xm);});
+                const slope = den ? num/den : 0;
+                forecastBase = ma[n-1];
+                trend = slope;
+            }
+
+            // Day-of-week adjustment factors
+            const dayAvg = this._weekdayAvg(d);
+            const globalAvg = counts.reduce((a,b)=>a+b,0)/n || 1;
+            const adjFactors = dayAvg.map(v => v !== null ? v / globalAvg : 1.0);
 
             const labels = [...d.map(x=>x.date.slice(5))];
             const actual = [...counts];
-            const predicted = [];
-            for(let i=0;i<n;i++) predicted.push(null);
-            predicted[n-1] = counts[n-1]; // Connect point
+            const predicted = Array(n).fill(null);
+            predicted[n-1] = Math.round(smoothed[n-1]);
 
-            // Predict 7 days
+            // Confidence band (simple: ±1 std of residuals)
+            const residuals = counts.map((c, i) => c - smoothed[i]);
+            const resMean = residuals.reduce((a,b)=>a+b,0)/n;
+            const resStd = Math.sqrt(residuals.map(r=>(r-resMean)**2).reduce((a,b)=>a+b,0)/n);
+            const upperBand = Array(n).fill(null);
+            const lowerBand = Array(n).fill(null);
+
             const lastDate = new Date(d[n-1].date);
-            for(let i=1;i<=7;i++){
+            for (let i = 1; i <= 7; i++) {
                 const nd = new Date(lastDate);
-                nd.setDate(nd.getDate()+i);
+                nd.setDate(nd.getDate() + i);
                 labels.push((nd.getMonth()+1)+'-'+nd.getDate());
                 actual.push(null);
-                predicted.push(Math.max(0,Math.round(intercept+slope*(n-1+i))));
+                const dow = nd.getDay();
+                const adj = adjFactors[dow] || 1.0;
+                const raw = this.predModel === 'exp'
+                    ? forecastBase + trend * i
+                    : forecastBase + trend * i;
+                const val = Math.max(0, Math.round(raw * adj));
+                predicted.push(val);
+                upperBand.push(Math.round(val + resStd));
+                lowerBand.push(Math.max(0, Math.round(val - resStd)));
             }
 
-            new Chart(el, {
+            this.charts.prediction = new Chart(el, {
                 type:'line',
                 data:{
                     labels,
                     datasets:[
-                        {label:'Gerçek',data:actual,borderColor:'rgb(59,130,246)',backgroundColor:'rgba(59,130,246,0.1)',fill:true,tension:0.3,pointRadius:2},
-                        {label:'Tahmin',data:predicted,borderColor:'rgb(249,115,22)',borderDash:[5,5],backgroundColor:'rgba(249,115,22,0.08)',fill:true,tension:0.3,pointRadius:3}
+                        {
+                            label: this.t?.stats?.count || 'Gerçek',
+                            data: actual,
+                            borderColor:'rgb(59,130,246)',
+                            backgroundColor:'rgba(59,130,246,0.08)',
+                            fill:true, tension:0.3, pointRadius:2, borderWidth:2
+                        },
+                        {
+                            label: this.t?.stats?.prediction || 'Tahmin',
+                            data: predicted,
+                            borderColor:'rgb(249,115,22)',
+                            borderDash:[5,4],
+                            backgroundColor:'rgba(249,115,22,0.07)',
+                            fill:false, tension:0.3, pointRadius:3, borderWidth:2
+                        },
+                        {
+                            label: '+1σ',
+                            data: upperBand,
+                            borderColor:'rgba(249,115,22,0.25)',
+                            borderDash:[2,3],
+                            backgroundColor:'rgba(249,115,22,0.04)',
+                            fill:'-1', tension:0.3, pointRadius:0, borderWidth:1
+                        },
+                        {
+                            label: '-1σ',
+                            data: lowerBand,
+                            borderColor:'rgba(249,115,22,0.25)',
+                            borderDash:[2,3],
+                            fill:false, tension:0.3, pointRadius:0, borderWidth:1
+                        }
                     ]
                 },
                 options:{
                     responsive:true, maintainAspectRatio:false,
-                    plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},
+                    plugins:{legend:{position:'bottom',labels:{font:{size:9},filter:l=>!['+ 1σ','-1σ','+ 1σ'].includes(l.text)}}},
                     scales:{
                         x:{grid:{display:false},ticks:{font:{size:8},maxTicksLimit:12}},
                         y:{beginAtZero:true,ticks:{precision:0}}
                     }
                 }
             });
+        },
+        renderDow() {
+            const el = document.getElementById('dowChart');
+            if (!el) return;
+            const dayNames = ['Paz','Pzt','Sal','Çar','Per','Cum','Cmt'];
+            const totals = Array(7).fill(0), counts = Array(7).fill(0);
+            this.dailyTrend.forEach(x => {
+                const dow = new Date(x.date).getDay();
+                totals[dow] += x.count; counts[dow]++;
+            });
+            const avgs = totals.map((t,i) => counts[i] > 0 ? Math.round(t/counts[i]) : 0);
+            new Chart(el, {
+                type:'bar',
+                data:{
+                    labels: dayNames,
+                    datasets:[{
+                        data: avgs,
+                        backgroundColor: avgs.map((v,i) => i===avgs.indexOf(Math.max(...avgs)) ? 'rgba(59,130,246,0.8)' : 'rgba(59,130,246,0.3)'),
+                        borderColor: 'rgba(59,130,246,0.7)',
+                        borderWidth:1, borderRadius:6
+                    }]
+                },
+                options:{
+                    responsive:true, maintainAspectRatio:false,
+                    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' Ort: '+c.raw}}},
+                    scales:{
+                        x:{grid:{display:false}},
+                        y:{beginAtZero:true,ticks:{precision:0}}
+                    }
+                }
+            });
+        },
+        computeInsights() {
+            const d = this.dailyTrend;
+            if (d.length < 2) return;
+            const counts = d.map(x=>x.count);
+            const n = counts.length;
+
+            // Growth rate: last 7 vs prev 7
+            if (n >= 14) {
+                const last7 = counts.slice(-7).reduce((a,b)=>a+b,0);
+                const prev7 = counts.slice(-14,-7).reduce((a,b)=>a+b,0);
+                this.growthRate = prev7 > 0 ? Math.round((last7-prev7)/prev7*100) : null;
+            } else if (n >= 2) {
+                const half = Math.floor(n/2);
+                const last = counts.slice(-half).reduce((a,b)=>a+b,0);
+                const prev = counts.slice(0,-half).reduce((a,b)=>a+b,0);
+                this.growthRate = prev > 0 ? Math.round((last-prev)/prev*100) : null;
+            }
+
+            // Std dev of last 14 days
+            const slice = counts.slice(-14);
+            const mean = slice.reduce((a,b)=>a+b,0)/slice.length;
+            const std = Math.sqrt(slice.map(v=>(v-mean)**2).reduce((a,b)=>a+b,0)/slice.length);
+            this.stdDev = Math.round(std);
+
+            // Best day of week
+            const dayNames = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+            const totals = Array(7).fill(0), ct = Array(7).fill(0);
+            d.forEach(x=>{const w=new Date(x.date).getDay(); totals[w]+=x.count; ct[w]++;});
+            const avgs = totals.map((t,i)=>ct[i]>0?t/ct[i]:0);
+            const best = avgs.indexOf(Math.max(...avgs));
+            this.bestDow = avgs[best] > 0 ? dayNames[best] : null;
+
+            this.$nextTick(()=>lucide.createIcons());
         }
     }
 }

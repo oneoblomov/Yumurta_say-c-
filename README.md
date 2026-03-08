@@ -1,5 +1,24 @@
 # AZIM-TAV
 
+## Guncelleme Sistemi
+
+Bu proje artik GitHub Release paketleri ile guncellenir.
+
+- Web arayuzundeki `Ayarlar > Guncelleme Sistemi` bolumunden yeni surum kontrolu yapilabilir.
+- Yeni bir tag ornegin `v1.0.2` olarak yayinlandiginda GitHub Actions paket olusturur ve release asset yukler.
+- Cihaz tarafinda `setup.sh` son release paketini kurar.
+- Periyodik kontrol `update.timer` ile, uygulama ici manuel kontrol ise update API ile yapilir.
+- Eski surumlere donus icin release listesinde ilgili surum secilerek rollback baslatilabilir.
+
+Elle guncelleme komutlari:
+
+```bash
+python3 manage_update.py check
+python3 manage_update.py install --restart
+python3 manage_update.py rollback --version 1.0.1 --restart
+python3 manage_update.py status
+```
+
 - cloudflared ile:
 
 ```bash
@@ -14,12 +33,20 @@ sudo apt update
 sudo apt install cloudflared
 ```
 
-1. python3 -m venv venv
-2. source venv/bin/activate
-3. pip install -r requirements.txt
+1. Sunucuyu hazirlayin:
 
-4.1. python run.py --reload
-4.2. cloudflared tunnel --url http://localhost:8000
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+1. Uygulamayi ve tüneli ayri terminallerde calistirin:
+
+```bash
+python run_web.py --reload
+cloudflared tunnel --url http://localhost:8000
+```
 
 > 4.1. ile 4.2. adımlarını farklı terminalde çalıştırın.
 
@@ -31,6 +58,6 @@ sudo apt install cloudflared
 
 > ip addr show wlp0s20f3
 > sudo ufw allow 8000/tcp
-> python run.py --reload
+> python run_web.py --reload
 
 - Sonrasında `http://<IP_ADDRESS>:8000` adresine giderek uygulamaya erişebilirsiniz. `<IP_ADDRESS>` kısmını kendi IP adresinizle değiştirin.

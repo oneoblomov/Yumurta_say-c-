@@ -61,7 +61,7 @@ def parse_args():
 
     # Model
     parser.add_argument("--model", type=str,
-                        default="models/yolo26n_mod/best_openvino_model",
+                        default="models/yolo26n_mod/a3_best_int8_openvino_model",
                         help="YOLO model yolu (.pt, .onnx, .ncnn)")
 
     # Algılama

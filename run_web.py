@@ -16,6 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+from web.versioning import display_version, read_version
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -31,9 +33,10 @@ def main():
     args = parser.parse_args()
 
     import uvicorn
+    version_label = display_version(read_version())
 
     print(f"\n{'='*60}")
-    print(f"  YUMURTA SAYICI WEB ARAYÜZÜ v1.0")
+    print(f"  YUMURTA SAYICI WEB ARAYÜZÜ {version_label}")
     print(f"  Azim-Tav Endüstriyel Sayım Sistemi")
     print(f"{'='*60}")
     print(f"  Adres   : http://{args.host}:{args.port}")

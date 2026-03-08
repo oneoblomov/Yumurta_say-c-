@@ -144,19 +144,39 @@ class EggDetector:
         except Exception:
             pass
 
-    def detect_and_track(self, frame: np.ndarray, persist: bool = True):
+    def detect_and_track(self, frame_orig: np.ndarray, persist: bool = True):
         """
         Algılama + ByteTrack takip (tek çağrı).
+        İsteğe bağlı CLAHE ve Stabilizasyon ön işlemleri ekli.
 
         Returns:
             Ultralytics Results nesnesi
         """
+        frame = frame_orig
+        
+        # Ön İşleme: CLAHE (Kontrast Artırma)
+        if self.cfg.enable_clahe:
+            try:
+                import cv2
+                lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                l, a, b = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                cl = clahe.apply(l)
+                limg = cv2.merge((cl,a,b))
+                frame = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+            except Exception:
+                pass
+
         # reset_tracker() sonrası ilk frame: persist=False ile yeni tracker başlat.
         # persist=True + boş trackers[] listesi -> IndexError (Ultralytics bug workaround)
         actual_persist = persist
         if self._first_after_reset:
             actual_persist = False
             self._first_after_reset = False
+
+        # hazırlık: tracker hata bayrağı yoksa oluştur
+        if not hasattr(self, '_tracker_broken'):
+            self._tracker_broken = False
 
         try:
             results = self.model.track(
@@ -181,7 +201,10 @@ class EggDetector:
             # ÇÖZÜM: tracker state'ini tamamen temizle, sonraki frame persist=False
             # ile başlasın (reset_tracker'ın yaptığının aynısı).
             tracker_type = self.tracker_cfg.tracker_type
-            print(f"[DETECTOR] {tracker_type} tracker bozuldu, sıfırlanıyor: {e}")
+            # sadece ilk hata mesajını logla, sonra sessiz kal
+            if not getattr(self, '_tracker_broken', False):
+                print(f"[DETECTOR] {tracker_type} tracker bozuldu, sıfırlanıyor: {e}")
+            self._tracker_broken = True
             # İç state temizle
             if hasattr(self.model, 'predictor') and self.model.predictor is not None:
                 if hasattr(self.model.predictor, 'trackers'):
@@ -261,3 +284,5 @@ class EggDetector:
                 self.model.predictor.trackers = []
         # Bir sonraki detect_and_track çağrısında persist=False kullan
         self._first_after_reset = True
+        # hata bayrağını temizle, yeni döngüde log tekrar çıkabilir
+        self._tracker_broken = False

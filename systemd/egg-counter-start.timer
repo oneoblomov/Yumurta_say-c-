@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer for Starting Yumurta Sayıcı at 08:00
+Requires=egg-counter.service
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

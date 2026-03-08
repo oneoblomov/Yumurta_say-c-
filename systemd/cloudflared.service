@@ -1,0 +1,22 @@
+[Unit]
+Description=Cloudflare Tunnel for Yumurta Sayıcı
+After=network-online.target
+Wants=network-online.target
+Requires=runpy.service
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:8000
+Restart=on-failure
+RestartSec=10
+# Hata durumunda otomatik tamir: yeniden başlatma
+WatchdogSec=60
+# Ağ bağlantısı kaybında yeniden dene
+RestartPreventExitStatus=1 2 3 4 5 6 7 8 9 10
+# Loglama
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

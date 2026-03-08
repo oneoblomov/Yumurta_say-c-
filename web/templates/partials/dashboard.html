@@ -46,19 +46,7 @@
         <span x-text="t.controls?.reset || 'Sıfırla'"></span>
       </button>
 
-      <!-- Source selector -->
-      <div class="ml-auto flex items-center gap-2">
-        <label
-          class="text-xs text-gray-500"
-          x-text="t.controls?.source || 'Kaynak:'"
-        ></label>
-        <input
-          x-model="source"
-          type="text"
-          placeholder="0 veya video.mp4"
-          class="px-3 py-2 border border-gray-200 rounded-lg text-sm w-40 focus:ring-2 focus:ring-primary-300 focus:border-primary-400 outline-none"
-        />
-      </div>
+
     </div>
   </div>
 
@@ -293,7 +281,6 @@
 <script>
   function dashboard() {
     return {
-      source: "0",
       todayCount: 0,
       dailyGoal: 0,
       recentEvents: [],
@@ -307,7 +294,7 @@
         const res = await fetch("/api/pipeline/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source: this.source || undefined }),
+          body: JSON.stringify({}),
         });
         const d = await res.json();
         if (!d.ok) showToast(d.error || "Başlatılamadı", "error");
