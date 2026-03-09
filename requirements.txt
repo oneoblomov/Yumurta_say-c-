@@ -10,3 +10,4 @@ aiofiles
 openpyxl
 fpdf2
 optuna
+lab
