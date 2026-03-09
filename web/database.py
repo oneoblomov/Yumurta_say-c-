@@ -149,6 +149,8 @@ class Database:
             ("camera_source", "0", "camera", "Kamera kaynağı"),
             ("camera_width", "640", "camera", "Kamera genişliği"),
             ("camera_height", "480", "camera", "Kamera yüksekliği"),
+            ("camera_active_start", "08:00", "camera", "Kamera otomatik açılış saati"),
+            ("camera_active_end", "16:00", "camera", "Kamera otomatik kapanış saati"),
             # Detector
             ("model_path", "models/yolo26n_mod/best_openvino_model",
              "detector", "YOLO model yolu"),

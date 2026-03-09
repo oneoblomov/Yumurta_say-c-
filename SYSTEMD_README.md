@@ -97,7 +97,7 @@ sudo systemctl start cam-watchdog.timer
 - `egg-counter-stop.timer`: Sayım servisini günlük durdurur.
 - `update.service` ve `update.timer`: GitHub Release tabanlı güncelleme kontrolünü yapar.
 - `health-check.service` ve `health-check.timer`: Servis sağlığını düzenli kontrol eder.
-- `cam-watchdog.service` ve `cam-watchdog.timer`: Kamera açıklığını 08:00-18:00 arası kontrol eder.
+- `cam-watchdog.service` ve `cam-watchdog.timer`: Web ayarlarındaki kamera saatlerine göre pipeline'ı dışarıdan failsafe olarak kontrol eder.
 
 ## Güncelleme Akışı
 

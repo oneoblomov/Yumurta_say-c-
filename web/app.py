@@ -47,21 +47,134 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 db = Database()
 pipeline = PipelineManager(db)
 update_manager = UpdateManager(db)
+schedule_controller_task: Optional[asyncio.Task] = None
+schedule_runtime_state = {
+    "last_reason": None,
+    "last_action": "idle",
+    "last_ok": True,
+    "last_message": "",
+    "last_checked_at": None,
+}
+_last_schedule_alert_signature = None
 
-# Otomatik pipeline başlatma (web arayüzü olmadan)
+
+def _record_schedule_state(reason: str, action: str,
+                           ok: bool, message: str = "") -> Dict[str, object]:
+    checked_at = datetime.now().strftime("%H:%M:%S")
+    schedule_runtime_state.update({
+        "last_reason": reason,
+        "last_action": action,
+        "last_ok": ok,
+        "last_message": message,
+        "last_checked_at": checked_at,
+    })
+    return dict(schedule_runtime_state)
+
+
+def _maybe_emit_schedule_alert(action: str, message: str) -> None:
+    global _last_schedule_alert_signature
+    if not message:
+        return
+    signature = (action, message)
+    if signature == _last_schedule_alert_signature:
+        return
+    _last_schedule_alert_signature = signature
+    severity = "warning" if action == "stopped" else "error"
+    db.add_alert("camera_schedule", message, severity)
+
+
+def _status_payload() -> Dict[str, object]:
+    status = pipeline.get_status()
+    status["schedule_runtime"] = dict(schedule_runtime_state)
+    return status
+
+
+def _enforce_camera_schedule(reason: str = "periodic") -> Dict[str, object]:
+    schedule = pipeline.get_schedule_window()
+    should_run = pipeline.is_within_schedule()
+    status = pipeline.get_status()
+    is_running = status.get("running", False)
+    is_paused = status.get("paused", False)
+
+    if should_run and not is_running:
+        source = db.get_setting("camera_source", "0")
+        result = pipeline.start(source=source)
+        if result.get("ok"):
+            message = (
+                f"[SCHEDULE] Pipeline başlatıldı ({reason}) "
+                f"{schedule['start']}-{schedule['end']}"
+            )
+            print(message)
+            return _record_schedule_state(reason, "started", True, message)
+        else:
+            message = (
+                f"Pipeline otomatik başlatılamadı ({reason}): "
+                f"{result.get('error')}"
+            )
+            print(f"[SCHEDULE] {message}")
+            _maybe_emit_schedule_alert("start_failed", message)
+            return _record_schedule_state(reason, "start_failed", False, message)
+    elif should_run and is_paused:
+        result = pipeline.resume()
+        if result.get("ok"):
+            message = f"[SCHEDULE] Pipeline devam ettirildi ({reason})"
+            print(message)
+            return _record_schedule_state(reason, "resumed", True, message)
+        message = f"Pipeline otomatik devam ettirilemedi ({reason})"
+        _maybe_emit_schedule_alert("resume_failed", message)
+        return _record_schedule_state(reason, "resume_failed", False, message)
+    elif not should_run and is_running:
+        result = pipeline.stop()
+        if result.get("ok"):
+            message = (
+                f"[SCHEDULE] Pipeline durduruldu ({reason}) "
+                f"{schedule['start']}-{schedule['end']}"
+            )
+            print(message)
+            return _record_schedule_state(reason, "stopped", True, message)
+        else:
+            message = (
+                f"Pipeline otomatik durdurulamadı ({reason}): "
+                f"{result.get('error')}"
+            )
+            print(f"[SCHEDULE] {message}")
+            _maybe_emit_schedule_alert("stop_failed", message)
+            return _record_schedule_state(reason, "stop_failed", False, message)
+
+    return _record_schedule_state(reason, "noop", True, "")
+
+
+async def _camera_schedule_loop() -> None:
+    while True:
+        try:
+            _enforce_camera_schedule(reason="watchdog")
+        except Exception as exc:
+            print(f"[SCHEDULE] Denetim hatası: {exc}")
+            _record_schedule_state("watchdog", "exception", False, str(exc))
+        await asyncio.sleep(5)
+
+# Otomatik pipeline denetimi
 @app.on_event("startup")
 async def startup_event():
-    print("[STARTUP] Pipeline otomatik başlatılıyor...")
-    result = pipeline.start(source="0")  # Varsayılan kamera
-    if result.get("ok"):
-        print(f"[STARTUP] Pipeline başlatıldı, session_id: {result['session_id']}")
-    else:
-        print(f"[STARTUP] Pipeline başlatma hatası: {result['error']}")
+    global schedule_controller_task
+    print("[STARTUP] Kamera zamanlayıcısı başlatılıyor...")
+    if schedule_controller_task is None or schedule_controller_task.done():
+        schedule_controller_task = asyncio.create_task(_camera_schedule_loop())
+    _enforce_camera_schedule(reason="startup")
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global schedule_controller_task
+    if schedule_controller_task is not None:
+        schedule_controller_task.cancel()
+        try:
+            await schedule_controller_task
+        except asyncio.CancelledError:
+            pass
+        schedule_controller_task = None
     print("[SHUTDOWN] Pipeline durduruluyor...")
-    pipeline.stop()
+    if pipeline.get_status().get("running"):
+        pipeline.stop()
     print("[SHUTDOWN] Pipeline durduruldu.")
 
 # WebSocket connections
@@ -309,12 +422,16 @@ async def api_start(request: Request):
     except Exception:
         pass
     source = body.get("source")
-    return JSONResponse(pipeline.start(source=source))
+    result = pipeline.start(source=source)
+    _record_schedule_state("manual_start", "manual_start", result.get("ok", False), result.get("error", ""))
+    return JSONResponse(result)
 
 
 @app.post("/api/pipeline/stop")
 async def api_stop():
-    return JSONResponse(pipeline.stop())
+    result = pipeline.stop()
+    _record_schedule_state("manual_stop", "manual_stop", result.get("ok", False), result.get("error", ""))
+    return JSONResponse(result)
 
 
 @app.post("/api/pipeline/pause")
@@ -340,7 +457,7 @@ async def api_debug():
 
 @app.get("/api/pipeline/status")
 async def api_status():
-    return JSONResponse(pipeline.get_status())
+    return JSONResponse(_status_payload())
 
 
 @app.get("/api/pipeline/events")
@@ -433,8 +550,21 @@ async def api_get_settings(category: str = None):
 @app.post("/api/settings")
 async def api_save_settings(request: Request):
     body = await request.json()
+    if "camera_active_start" in body:
+        body["camera_active_start"] = PipelineManager.normalize_schedule_value(
+            body.get("camera_active_start"),
+            PipelineManager.DEFAULT_CAMERA_ACTIVE_START,
+        )
+    if "camera_active_end" in body:
+        body["camera_active_end"] = PipelineManager.normalize_schedule_value(
+            body.get("camera_active_end"),
+            PipelineManager.DEFAULT_CAMERA_ACTIVE_END,
+        )
     db.set_settings_bulk(body)
-    return JSONResponse({"ok": True})
+    schedule_result = None
+    if "camera_active_start" in body or "camera_active_end" in body:
+        schedule_result = _enforce_camera_schedule(reason="settings_updated")
+    return JSONResponse({"ok": True, "schedule_result": schedule_result})
 
 
 @app.post("/api/settings/language")
@@ -632,7 +762,7 @@ async def websocket_endpoint(websocket: WebSocket):
             status = pipeline.get_status()
             new_events = pipeline.get_new_events(max_count=10)
             msg = {
-                "status": status,
+                "status": _status_payload(),
                 "events": new_events,
                 "alert_count": db.get_unacknowledged_count(),
             }

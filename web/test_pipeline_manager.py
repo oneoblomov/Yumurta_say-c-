@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 
 from .pipeline_manager import PipelineManager
 
@@ -7,8 +8,17 @@ class DummyDB:
     def __init__(self):
         self.updated = False
         self.last_args = None
+        self.session_created = False
+        self.settings = {
+            "test_mode_enabled": "1",
+            "test_expected_batch": "55",
+            "test_window_seconds": "5",
+            "camera_active_start": "08:00",
+            "camera_active_end": "16:00",
+        }
 
     def create_session(self, *args, **kwargs):
+        self.session_created = True
         return 1
     def end_session(self, *args, **kwargs):
         pass
@@ -16,12 +26,7 @@ class DummyDB:
         self.updated = True
         self.last_args = (session_id, count)
     def get_setting(self, key, default=None):
-        settings = {
-            "test_mode_enabled": "1",
-            "test_expected_batch": "55",
-            "test_window_seconds": "5",
-        }
-        return settings.get(key, default)
+        return self.settings.get(key, default)
 
 
 class DummyTrackManager:
@@ -117,6 +122,47 @@ class PipelineManagerTestModeStatsTest(unittest.TestCase):
 
         labels = [b["label"] for b in status["batches"]]
         self.assertEqual(labels, ["[55/55]", "[54/55]", "[56/55]"])
+
+
+class PipelineManagerScheduleTest(unittest.TestCase):
+    def setUp(self):
+        self.db = DummyDB()
+        self.pm = PipelineManager(db=self.db)
+
+    def test_schedule_defaults_are_exposed(self):
+        self.assertEqual(
+            self.pm.get_schedule_window(),
+            {"start": "08:00", "end": "16:00"},
+        )
+
+    def test_schedule_window_check(self):
+        self.assertFalse(
+            self.pm.is_within_schedule(
+                now=datetime.strptime("07:59", "%H:%M").time()
+            )
+        )
+        self.assertTrue(
+            self.pm.is_within_schedule(
+                now=datetime.strptime("08:00", "%H:%M").time()
+            )
+        )
+        self.assertTrue(
+            self.pm.is_within_schedule(
+                now=datetime.strptime("15:59", "%H:%M").time()
+            )
+        )
+        self.assertFalse(
+            self.pm.is_within_schedule(
+                now=datetime.strptime("16:00", "%H:%M").time()
+            )
+        )
+
+    def test_start_blocked_outside_schedule(self):
+        self.pm.is_within_schedule = lambda now=None: False
+        result = self.pm.start(source="0")
+        self.assertFalse(result["ok"])
+        self.assertIn("08:00-16:00", result["error"])
+        self.assertFalse(self.db.session_created)
 
 
 if __name__ == "__main__":

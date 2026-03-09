@@ -13,7 +13,7 @@ import threading
 import queue
 import numpy as np
 from collections import deque
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from pathlib import Path
 from typing import Optional, Dict, List, Callable
 
@@ -46,6 +46,9 @@ class PipelineManager:
     Arka plan thread'inde çalışır, MJPEG streaming ve
     real-time durum güncellemeleri sağlar.
     """
+
+    DEFAULT_CAMERA_ACTIVE_START = "08:00"
+    DEFAULT_CAMERA_ACTIVE_END = "16:00"
 
     def __init__(self, db):
         self.db = db
@@ -108,6 +111,7 @@ class PipelineManager:
         # Alert tracking
         self._consecutive_failures = 0
         self._last_alert_time = 0.0
+        self._last_camera_error: Optional[str] = None
 
         # Stream quality
         self._jpeg_quality = 70
@@ -121,12 +125,25 @@ class PipelineManager:
         if self._running:
             return {"ok": False, "error": "Pipeline zaten çalışıyor"}
 
+        if not self.is_within_schedule():
+            window = self.get_schedule_window()
+            return {
+                "ok": False,
+                "error": (
+                    "Kamera yalnızca planlanan saatlerde çalışır "
+                    f"({window['start']}-{window['end']})"
+                ),
+            }
+
         try:
             config = self._build_config(source, **overrides)
             config.pipeline.headless = True
             self._config = config
 
             if not self._init_capture():
+                self._last_camera_error = "Kamera açılamadı"
+                self._emit_alert("camera_start_failed", self._last_camera_error,
+                                 "error")
                 return {"ok": False, "error": "Kamera açılamadı"}
 
             self._init_modules()
@@ -144,6 +161,7 @@ class PipelineManager:
             self._fps = 0.0
             self._fps_times.clear()
             self._consecutive_failures = 0
+            self._last_camera_error = None
             self._init_test_mode_from_settings()
             self._reset_test_metrics()
 
@@ -166,6 +184,7 @@ class PipelineManager:
             return {"ok": True, "session_id": self._session_id}
 
         except Exception as e:
+            self._last_camera_error = str(e)
             self._emit_alert("error", f"Pipeline başlatma hatası: {e}",
                              "error")
             return {"ok": False, "error": str(e)}
@@ -243,6 +262,7 @@ class PipelineManager:
 
     def get_status(self) -> Dict:
         """Güncel pipeline durumu."""
+        schedule = self.get_schedule_window()
         status = {
             "running": self._running,
             "paused": self._paused,
@@ -254,6 +274,11 @@ class PipelineManager:
             "session_id": self._session_id,
             "resolution": (f"{self._frame_width}x{self._frame_height}"
                            if self._frame_width else "N/A"),
+            "schedule_start": schedule["start"],
+            "schedule_end": schedule["end"],
+            "schedule_active": self.is_within_schedule(),
+            "camera_open": self.is_open(),
+            "last_camera_error": self._last_camera_error,
         }
         return status
 
@@ -529,17 +554,78 @@ class PipelineManager:
         """Kamera açık mı kontrol et."""
         return self._capture is not None and self._capture.isOpened()
 
+    @classmethod
+    def normalize_schedule_value(cls, value: str, default: str) -> str:
+        raw = str(value or default).strip()
+        try:
+            parsed = datetime.strptime(raw, "%H:%M").time()
+        except ValueError:
+            parsed = datetime.strptime(default, "%H:%M").time()
+        return parsed.strftime("%H:%M")
+
+    def get_schedule_window(self) -> Dict[str, str]:
+        start = self.normalize_schedule_value(
+            self.db.get_setting(
+                "camera_active_start", self.DEFAULT_CAMERA_ACTIVE_START
+            ),
+            self.DEFAULT_CAMERA_ACTIVE_START,
+        )
+        end = self.normalize_schedule_value(
+            self.db.get_setting(
+                "camera_active_end", self.DEFAULT_CAMERA_ACTIVE_END
+            ),
+            self.DEFAULT_CAMERA_ACTIVE_END,
+        )
+        return {"start": start, "end": end}
+
+    def is_within_schedule(self, now: Optional[dt_time] = None) -> bool:
+        current = now or datetime.now().time().replace(second=0, microsecond=0)
+        schedule = self.get_schedule_window()
+        start = datetime.strptime(schedule["start"], "%H:%M").time()
+        end = datetime.strptime(schedule["end"], "%H:%M").time()
+
+        if start == end:
+            return True
+        if start < end:
+            return start <= current < end
+        return current >= start or current < end
+
     def reopen(self):
         """Kamerayı yeniden aç."""
         if self._capture is not None:
             self._capture.release()
         self._init_capture()
 
+    def _recover_camera(self) -> bool:
+        """Kamera bağlantısını tekrar kurmayı dene."""
+        self._last_camera_error = "Kamera bağlantısı kesildi, yeniden bağlanılıyor"
+        self._emit_alert("camera_disconnect", self._last_camera_error,
+                         "critical")
+        try:
+            self.reopen()
+        except Exception as exc:
+            self._last_camera_error = f"Kamera yeniden açılamadı: {exc}"
+            self._emit_alert("camera_reopen_failed", self._last_camera_error,
+                             "error")
+            return False
+
+        if self.is_open():
+            self._consecutive_failures = 0
+            self._last_camera_error = None
+            self._emit_event("camera_recovered", {
+                "message": "Kamera bağlantısı geri geldi",
+            })
+            return True
+
+        self._last_camera_error = "Kamera yeniden açılamadı"
+        self._emit_alert("camera_reopen_failed", self._last_camera_error,
+                         "error")
+        return False
+
     def _camera_watchdog(self):
-        """08-18 arası her 5 saniyede bir kamerayı kontrol et."""
+        """Aktif çalışma saatlerinde her 5 saniyede bir kamerayı kontrol et."""
         while self._running:
-            now = datetime.now().time()
-            if datetime.time(hour=8) <= now < datetime.time(hour=18):
+            if self.is_within_schedule():
                 if not self.is_open():
                     print("[WATCHDOG] Kamera kapalı, yeniden açılıyor")
                     try:
@@ -572,7 +658,15 @@ class PipelineManager:
                 time.sleep(0.05)
                 continue
 
-            ret, frame = self._capture.read()
+            capture = self._capture
+            if capture is None:
+                ret, frame = False, None
+            else:
+                try:
+                    ret, frame = capture.read()
+                except Exception:
+                    ret, frame = False, None
+
             if not ret or frame is None:
                 self._consecutive_failures += 1
 
@@ -586,21 +680,21 @@ class PipelineManager:
                     continue
 
                 if self._consecutive_failures > 30:
-                    self._emit_alert(
-                        "camera_disconnect",
-                        "Kamera bağlantısı kesildi!",
-                        "critical",
-                    )
-                    self._running = False
+                    recovered = self.is_within_schedule() and self._recover_camera()
+                    if recovered:
+                        continue
+
                     if self._session_id:
                         self.db.update_session_status(
                             self._session_id, "error")
-                    break
+                    time.sleep(1.0)
+                    continue
 
                 time.sleep(0.01)
                 continue
 
             self._consecutive_failures = 0
+            self._last_camera_error = None
             self._frame_count += 1
 
             t0 = time.perf_counter()
