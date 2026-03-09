@@ -28,7 +28,6 @@ echo "$(date): Kurulum başlatıldı." > "$LOG_FILE"
 
 echo -e "${YELLOW}1. Sistem paketleri hazırlanıyor...${NC}"
 sudo apt update >> "$LOG_FILE" 2>&1
-sudo apt upgrade -y >> "$LOG_FILE" 2>&1
 sudo apt install -y python3 python3-pip python3-venv git curl wget tar rsync >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Sistem hazır.${NC}"
 
