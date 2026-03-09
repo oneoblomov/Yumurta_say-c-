@@ -195,7 +195,7 @@ class Database:
             # Test Mode
             ("show_test_page", "1", "test", "Test sayfasını menüde göster"),
             ("test_mode_enabled", "1", "test", "5 sn test penceresi analizi"),
-            ("test_expected_batch", "30", "test", "Pencere başına beklenen yumurta"),
+            ("test_expected_batch", "55", "test", "Pencere başına beklenen yumurta"),
             ("test_window_seconds", "5", "test", "Test pencere süresi (sn)"),
         ]
         for key, value, category, desc in defaults:
@@ -205,6 +205,23 @@ class Database:
                 (key, value, category, desc),
             )
         self.conn.commit()
+
+        # migration: old installations may still have 30 as the expected batch size
+        try:
+            cur = self.conn.execute(
+                "SELECT value FROM settings WHERE key = ?", ("test_expected_batch",)
+            )
+            row = cur.fetchone()
+            if row is not None and row[0].strip() == "30":
+                # bump to new default of 55
+                self.conn.execute(
+                    "UPDATE settings SET value = ? WHERE key = ?",
+                    ("55", "test_expected_batch"),
+                )
+                self.conn.commit()
+        except Exception:
+            # ignore migration errors, not critical
+            pass
 
     # ============================================================ Sessions
     def create_session(self, source: str = "0",

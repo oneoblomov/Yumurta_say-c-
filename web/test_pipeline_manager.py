@@ -18,7 +18,7 @@ class DummyDB:
     def get_setting(self, key, default=None):
         settings = {
             "test_mode_enabled": "1",
-            "test_expected_batch": "30",
+            "test_expected_batch": "55",
             "test_window_seconds": "5",
         }
         return settings.get(key, default)
@@ -80,7 +80,7 @@ class PipelineManagerTestModeStatsTest(unittest.TestCase):
         self.db = DummyDB()
         self.pm = PipelineManager(db=self.db)
         self.pm._test_mode_enabled = True
-        self.pm._test_expected_per_series = 30
+        self.pm._test_expected_per_series = 55
         self.pm._test_series_timeout_seconds = 5.0
         self.pm._total_count = 0
         self.pm._reset_test_metrics()
@@ -89,33 +89,34 @@ class PipelineManagerTestModeStatsTest(unittest.TestCase):
         base = 1000.0
         self.pm._test_started_at = base
 
-        # Seri-1: 30 yumurta, sonra 5+ sn sessizlikte kapanır -> [30/30]
-        for i in range(30):
+        # Seri-1: 55 yumurta, sonra 5+ sn sessizlikte kapanır -> [55/55]
+        for i in range(55):
             self.pm._on_test_egg_counted({"timestamp": base + (i * 0.02)})
         self.pm._close_timed_out_series(now=base + 5.6)
 
-        # Seri-2: 29 yumurta, sonra kapanır -> [29/30]
+        # Seri-2: 54 yumurta, sonra kapanır -> [54/55]
         s2 = base + 10.0
-        for i in range(29):
+        for i in range(54):
             self.pm._on_test_egg_counted({"timestamp": s2 + (i * 0.02)})
         self.pm._close_timed_out_series(now=s2 + 5.6)
 
-        # Seri-3: 31 yumurta, sonra kapanır -> [31/30]
+        # Seri-3: 56 yumurta, sonra kapanır -> [56/55]
         s3 = base + 20.0
-        for i in range(31):
+        for i in range(56):
             self.pm._on_test_egg_counted({"timestamp": s3 + (i * 0.02)})
-        self.pm._close_timed_out_series(now=s3 + 5.7)
+        # ensure at least 5s idle after last egg (last egg at s3+1.1)
+        self.pm._close_timed_out_series(now=s3 + 6.2)
 
         status = self.pm.get_test_status()
         self.assertTrue(status["enabled"])
         self.assertEqual(status["summary"]["batch_count"], 3)
-        self.assertEqual(status["summary"]["actual_total"], 90)
-        self.assertEqual(status["summary"]["expected_total"], 90)
+        self.assertEqual(status["summary"]["actual_total"], 165)
+        self.assertEqual(status["summary"]["expected_total"], 165)
         self.assertEqual(status["summary"]["error_total"], 0)
         self.assertFalse(status["active_series"]["active"])
 
         labels = [b["label"] for b in status["batches"]]
-        self.assertEqual(labels, ["[30/30]", "[29/30]", "[31/30]"])
+        self.assertEqual(labels, ["[55/55]", "[54/55]", "[56/55]"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,7 @@
+[Unit]
+Description=Yumurta servisi kamera kontrolü
+After=runpy.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/azmarge/Yumurta_sayıcı/scripts/check_cam.py

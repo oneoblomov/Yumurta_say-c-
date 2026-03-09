@@ -62,6 +62,13 @@ class ThreadedCapture:
 
     def __init__(self, source, width: int, height: int, fps: int, buffer_size: int,
                  backend: str = "auto"):
+        self._source = source
+        self._width = width
+        self._height = height
+        self._fps = fps
+        self._buffer_size = buffer_size
+        self._backend = backend
+
         if isinstance(source, str) and source.isdigit():
             source = int(source)
 
@@ -149,6 +156,15 @@ class ThreadedCapture:
         """Video dosyasını başa sar."""
         if self._cap is not None:
             self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    def is_open(self):
+        return self._cap is not None and self._cap.isOpened()
+
+    def reopen(self):
+        # Kapalıysa yeniden oluşturmak için mevcut parametreleri kullan
+        self.stop()
+        self.__init__(self._source, self._width, self._height, self._fps, self._buffer_size, self._backend)
+        self.start()
 
     @property
     def is_file(self):

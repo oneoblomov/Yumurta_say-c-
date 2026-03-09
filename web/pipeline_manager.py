@@ -95,7 +95,7 @@ class PipelineManager:
         # Test mode metrics
         self._test_lock = threading.Lock()
         self._test_mode_enabled = False
-        self._test_expected_per_series = 30
+        self._test_expected_per_series = 55
         self._test_series_timeout_seconds = 5.0
         self._test_started_at: Optional[float] = None
         self._test_series_active = False
@@ -152,6 +152,12 @@ class PipelineManager:
             )
             self._thread.start()
 
+            # Kamera bekçisi thread'ini başlat
+            self._watchdog_thread = threading.Thread(
+                target=self._camera_watchdog, daemon=True
+            )
+            self._watchdog_thread.start()
+
             self._emit_event("pipeline_started", {
                 "session_id": self._session_id,
                 "source": config.pipeline.source,
@@ -172,6 +178,8 @@ class PipelineManager:
         self._running = False
         if self._thread:
             self._thread.join(timeout=5)
+        if hasattr(self, '_watchdog_thread') and self._watchdog_thread:
+            self._watchdog_thread.join(timeout=5)
         self._cleanup()
 
         # DB session kapat
@@ -517,6 +525,32 @@ class PipelineManager:
             print(f"[WEB PIPELINE] Kamera hatası: {e}")
             return False
 
+    def is_open(self) -> bool:
+        """Kamera açık mı kontrol et."""
+        return self._capture is not None and self._capture.isOpened()
+
+    def reopen(self):
+        """Kamerayı yeniden aç."""
+        if self._capture is not None:
+            self._capture.release()
+        self._init_capture()
+
+    def _camera_watchdog(self):
+        """08-18 arası her 5 saniyede bir kamerayı kontrol et."""
+        while self._running:
+            now = datetime.now().time()
+            # Geçici test: her zaman kontrol et (saat aralığı devre dışı)
+            # if datetime.time(hour=8) <= now < datetime.time(hour=18):
+            if True:  # Geçici: her zaman aktif
+                if not self.is_open():
+                    print("[WATCHDOG] Kamera kapalı, yeniden açılıyor")
+                    try:
+                        self.reopen()
+                    except Exception as e:
+                        print(f"[WATCHDOG] Kamerayı açamadık: {e}")
+                        raise  # Uygulamayı çökert, systemd yeniden başlatır
+            time.sleep(5)
+
     def _init_modules(self):
         """Alt modülleri başlat."""
         self._preprocessor = FramePreprocessor(self._config.preprocessor)
@@ -772,7 +806,7 @@ class PipelineManager:
         """DB ayarlarından test modu parametrelerini yükle."""
         try:
             enabled = str(self.db.get_setting("test_mode_enabled", "1"))
-            expected = int(self.db.get_setting("test_expected_batch", "30"))
+            expected = int(self.db.get_setting("test_expected_batch", "55"))
             window_sec = float(self.db.get_setting("test_window_seconds", "5"))
 
             self._test_mode_enabled = enabled == "1"
@@ -780,7 +814,7 @@ class PipelineManager:
             self._test_series_timeout_seconds = max(1.0, window_sec)
         except Exception:
             self._test_mode_enabled = True
-            self._test_expected_per_series = 30
+            self._test_expected_per_series = 55
             self._test_series_timeout_seconds = 5.0
 
     def _reset_test_metrics(self):

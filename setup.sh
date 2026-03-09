@@ -205,6 +205,12 @@ for u in runpy.service cloudflared.service; do
     sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
     sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
 done
+# timer'ları da durdur/devre dışı bırak
+for u in cam-watchdog.timer; do
+    sudo systemctl stop "$u" >> "$LOG_FILE" 2>&1 || true
+    sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
+    sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
+done
 # yeni birimleri kopyala
 sudo cp systemd/*.service /etc/systemd/system/ >> "$LOG_FILE" 2>&1
 # timers may not exist if removed earlier
@@ -217,11 +223,13 @@ echo -e "${GREEN}✓ Systemd servisleri kuruldu.${NC}"
 echo -e "${YELLOW}7. Servisler etkinleştiriliyor...${NC}"
 sudo systemctl enable runpy.service >> "$LOG_FILE" 2>&1
 sudo systemctl enable cloudflared.service >> "$LOG_FILE" 2>&1
+sudo systemctl enable cam-watchdog.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler etkinleştirildi.${NC}"
 
 echo -e "${YELLOW}8. Servisler başlatılıyor...${NC}"
 sudo systemctl start runpy.service >> "$LOG_FILE" 2>&1
 sudo systemctl start cloudflared.service >> "$LOG_FILE" 2>&1
+sudo systemctl start cam-watchdog.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler başlatıldı.${NC}"
 
 # log dosyaları servislere göre artık oluşturulmuyor (update/health kaldırıldı)
@@ -239,6 +247,12 @@ if systemctl is-active --quiet cloudflared.service; then
     echo -e "${GREEN}✓ cloudflared.service aktif${NC}"
 else
     echo -e "${RED}✗ cloudflared.service aktif değil${NC}"
+fi
+
+if systemctl is-enabled --quiet cam-watchdog.timer; then
+    echo -e "${GREEN}✓ cam-watchdog.timer etkin${NC}"
+else
+    echo -e "${RED}✗ cam-watchdog.timer etkin değil${NC}"
 fi
 
 echo -e "${GREEN}========================================${NC}"
