@@ -6,7 +6,7 @@ Requires=runpy.service
 
 [Service]
 Type=simple
-User=pi
+User=azmarge
 ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:8000
 Restart=on-failure
 RestartSec=10

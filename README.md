@@ -80,7 +80,6 @@ docker run --rm --platform linux/arm64 -it debian:bookworm bash
 - Yeni version oluşturma
 
 ```shell
-HTTP/1.1
 git tag v1.0.1
 git push origin v1.0.1
 ```
