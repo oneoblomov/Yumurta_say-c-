@@ -52,6 +52,12 @@
   </head>
   <body class="h-full bg-gray-50 text-gray-800" x-data="app()" x-init="init()">
 
+    {% if cloudflare_url %}
+    <div class="w-full bg-yellow-100 text-yellow-800 text-center py-1 text-sm">
+      Public URL: <a href="{{ cloudflare_url }}" class="underline" target="_blank">{{ cloudflare_url }}</a>
+    </div>
+    {% endif %}
+
     <!-- Mobile Header -->
     <header class="lg:hidden fixed top-0 inset-x-0 z-50 bg-white border-b border-gray-200 shadow-sm">
       <div class="flex items-center justify-between px-4 h-14">

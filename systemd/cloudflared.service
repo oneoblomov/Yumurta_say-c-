@@ -7,9 +7,7 @@ Requires=runpy.service
 [Service]
 Type=simple
 User=azmarge
-ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:8000 \
-                 --loglevel info \
-                 --logfile /home/azmarge/Desktop/Azim-Tav/Yumurta_sayıcı/logs/cloudflared.log
+ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:8000
 Restart=on-failure
 RestartSec=10
 # Hata durumunda otomatik tamir: yeniden başlatma

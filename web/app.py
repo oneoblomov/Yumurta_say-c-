@@ -53,34 +53,46 @@ ws_connections: List[WebSocket] = []
 
 
 # ============================================================ Helpers
+
+def get_cloudflared_url() -> Optional[str]:
+    """Try to extract the public URL issued by cloudflared from the
+    systemd journal. Returns None if it can't be found.
+
+    This is intended for "quick tunnels" started by the service file,
+    which log a line like "Your quick Tunnel has been created! Visit it
+    at https://...".  A more robust alternative would be to use a named
+    tunnel and query the Cloudflare API, but for the typical out‑of‑box
+    installation the journal is sufficient.
+    """
+    try:
+        output = subprocess.check_output(
+            [
+                "journalctl", "-u", "cloudflared.service", "-n", "50",
+                "--no-pager",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return None
+
+    # look backwards for the most recent trycloudflare URL; quick tunnels
+    # are the only ones we expect here so we can be specific.
+    import re
+    pattern = re.compile(r"https?://[\w\-.]+\.trycloudflare\.com[\w\-/]*")
+    for line in reversed(output.splitlines()):
+        m = pattern.search(line)
+        if m:
+            return m.group(0)
+    return None
+
+
 def _lang(request: Request) -> str:
     """İstek dili. Cookie > DB setting > default."""
     lang = request.cookies.get("lang")
     if not lang:
         lang = db.get_setting("language", DEFAULT_LANG)
     return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANG
-
-
-def get_cloudflare_url() -> Optional[str]:
-    """Return the currently active public Cloudflare tunnel URL if known.
-
-    It first checks an environment variable (useful for systemd
-    EnvironmentFile), then falls back to parsing the log file that the
-    service writes to. Returns None when no URL can be determined.
-    """
-    import os, re
-    url = os.environ.get('CLOUDFLARED_URL')
-    if url:
-        return url
-    log_path = ROOT_DIR / 'logs' / 'cloudflared.log'
-    try:
-        text = log_path.read_text()
-    except Exception:
-        return None
-    m = re.search(r'https://[a-zA-Z0-9\-]+\.trycloudflare\.com', text)
-    if m:
-        return m.group(0)
-    return None
 
 
 def _ctx(request: Request, **extra) -> dict:
@@ -94,9 +106,10 @@ def _ctx(request: Request, **extra) -> dict:
         "t": tr,
         "alert_count": db.get_unacknowledged_count(),
         "show_test_page": db.get_setting("show_test_page", "1") == "1",
-        "cloudflare_url": get_cloudflare_url(),
         **extra,
     }
+    # lazy evaluate cloudflared URL; if syslog not available this is None
+    ctx["cloudflare_url"] = get_cloudflared_url()
     return ctx
 
 
