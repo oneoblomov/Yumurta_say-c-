@@ -192,6 +192,13 @@ fi
 echo -e "${GREEN}✓ Sürüm kaydı tamamlandı.${NC}"
 
 echo -e "${YELLOW}6. Systemd dosyaları kuruluyor...${NC}"
+# eski birimleri durdur, devre dışı bırak ve sil
+for u in runpy.service cloudflared.service; do
+    sudo systemctl stop "$u" >> "$LOG_FILE" 2>&1 || true
+    sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
+    sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
+done
+# yeni birimleri kopyala
 sudo cp systemd/*.service /etc/systemd/system/ >> "$LOG_FILE" 2>&1
 # timers may not exist if removed earlier
 if compgen -G "systemd/*.timer" > /dev/null; then
