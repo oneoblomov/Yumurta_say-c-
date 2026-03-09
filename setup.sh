@@ -1,6 +1,12 @@
 #!/bin/bash
 # setup.sh - GitHub Release paketi ile kurulum scripti
 
+# Çalıştırılırken sudo gerekirse yeniden başlat
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Bu script root olarak çalıştırılmalı, sudo kullanılıyor..."
+    exec sudo bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -10,7 +16,8 @@ NC='\033[0m'
 
 REPO_OWNER="oneoblomov"
 REPO_NAME="Yumurta_say-c-"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BASH_SOURCE yoksa $0 kullan
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${0}}")" && pwd)"
 TARGET_DIR="$SCRIPT_DIR"
 
 if [ ! -f "$TARGET_DIR/main.py" ]; then
@@ -227,10 +234,14 @@ sudo systemctl enable cam-watchdog.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler etkinleştirildi.${NC}"
 
 echo -e "${YELLOW}8. Servisler başlatılıyor...${NC}"
-sudo systemctl start runpy.service >> "$LOG_FILE" 2>&1
-sudo systemctl start cloudflared.service >> "$LOG_FILE" 2>&1
-sudo systemctl start cam-watchdog.timer >> "$LOG_FILE" 2>&1
-echo -e "${GREEN}✓ Servisler başlatıldı.${NC}"
+# sudo artık gerekli değil çünkü script root user olarak devam ediyor
+systemctl start runpy.service >> "$LOG_FILE" 2>&1 || true
+systemctl start cloudflared.service >> "$LOG_FILE" 2>&1 || true
+# timer başlatma başarısız olsa bile script devam etsin
+if ! systemctl start cam-watchdog.timer >> "$LOG_FILE" 2>&1; then
+    echo -e "${YELLOW}⚠️ cam-watchdog.timer başlatılamadı, devam ediliyor${NC}"
+fi
+echo -e "${GREEN}✓ Servisler başlatıldı (hatalar loglandı).${NC}"
 
 # log dosyaları servislere göre artık oluşturulmuyor (update/health kaldırıldı)
 

@@ -48,6 +48,22 @@ db = Database()
 pipeline = PipelineManager(db)
 update_manager = UpdateManager(db)
 
+# Otomatik pipeline başlatma (web arayüzü olmadan)
+@app.on_event("startup")
+async def startup_event():
+    print("[STARTUP] Pipeline otomatik başlatılıyor...")
+    result = pipeline.start(source="0")  # Varsayılan kamera
+    if result.get("ok"):
+        print(f"[STARTUP] Pipeline başlatıldı, session_id: {result['session_id']}")
+    else:
+        print(f"[STARTUP] Pipeline başlatma hatası: {result['error']}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("[SHUTDOWN] Pipeline durduruluyor...")
+    pipeline.stop()
+    print("[SHUTDOWN] Pipeline durduruldu.")
+
 # WebSocket connections
 ws_connections: List[WebSocket] = []
 
