@@ -81,19 +81,43 @@ def get_cloudflared_url() -> Optional[str]:
     installation the log file is sufficient.
     """
     log_file = Path("/home/azmarge/cloudflared.log")
-    if not log_file.exists():
-        return None
+    url = None
+
+    # try the log file first (systemd will append here)
+    if log_file.exists():
+        try:
+            with open(log_file, "r") as f:
+                lines = f.readlines()
+        except Exception:
+            lines = []
+        import re
+        pattern = re.compile(r"https?://[\w\-.]+\.trycloudflare\.com[\w\-/]*")
+        for line in reversed(lines):
+            m = pattern.search(line)
+            if m:
+                url = m.group(0)
+                break
+
+    if url:
+        return url
+
+    # fallback to journalctl; may fail if the web service user isn't
+    # permitted, but nothing lost by trying
     try:
-        with open(log_file, "r") as f:
-            lines = f.readlines()
+        output = subprocess.check_output(
+            [
+                "journalctl", "-u", "cloudflared.service", "-n", "50",
+                "--no-pager",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
     except Exception:
         return None
 
-    # look backwards for the most recent trycloudflare URL; quick tunnels
-    # are the only ones we expect here so we can be specific.
     import re
     pattern = re.compile(r"https?://[\w\-.]+\.trycloudflare\.com[\w\-/]*")
-    for line in reversed(lines):
+    for line in reversed(output.splitlines()):
         m = pattern.search(line)
         if m:
             return m.group(0)

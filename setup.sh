@@ -19,6 +19,12 @@ else
 fi
 TARGET_DIR="$SCRIPT_DIR"
 
+# make sure we can run sudo commands without unexpected hangs later
+if ! sudo -v; then
+    echo -e "${RED}This script requires sudo privileges. Please run as a user with sudo access.${NC}"
+    exit 1
+fi
+
 if [ ! -f "$TARGET_DIR/main.py" ]; then
     TARGET_DIR="$HOME/Yumurta_sayıcı"
 fi
@@ -233,14 +239,33 @@ sudo systemctl enable cam-watchdog.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler etkinleştirildi.${NC}"
 
 echo -e "${YELLOW}8. Servisler başlatılıyor...${NC}"
-sudo systemctl start runpy.service >> "$LOG_FILE" 2>&1
-sudo systemctl start cloudflared.service >> "$LOG_FILE" 2>&1
+
+# start each unit but don't let a failure abort the script; log and report
+failed=0
+for u in runpy.service cloudflared.service; do
+    if ! sudo systemctl start "$u" >> "$LOG_FILE" 2>&1; then
+        echo -e "${RED}✗ $u başlatılamadı (ayrıntılar logta).${NC}"
+        failed=1
+    fi
+done
+
 if systemctl is-active --quiet cam-watchdog.timer; then
-    sudo systemctl restart cam-watchdog.timer >> "$LOG_FILE" 2>&1
+    if ! sudo systemctl restart cam-watchdog.timer >> "$LOG_FILE" 2>&1; then
+        echo -e "${RED}✗ cam-watchdog.timer yeniden başlatılamadı.${NC}"
+        failed=1
+    fi
 else
-    sudo systemctl start cam-watchdog.timer >> "$LOG_FILE" 2>&1
+    if ! sudo systemctl start cam-watchdog.timer >> "$LOG_FILE" 2>&1; then
+        echo -e "${RED}✗ cam-watchdog.timer başlatılamadı.${NC}"
+        failed=1
+    fi
 fi
-echo -e "${GREEN}✓ Servisler başlatıldı.${NC}"
+
+if [ "$failed" -eq 0 ]; then
+    echo -e "${GREEN}✓ Servisler başlatıldı.${NC}"
+else
+    echo -e "${YELLOW}⚠️ Bazı servisler başlatılamadı; kurulum devam ediyor, ancak lütfen log dosyasını kontrol edin.${NC}"
+fi
 
 # log dosyaları servislere göre artık oluşturulmuyor (update/health kaldırıldı)
 

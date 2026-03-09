@@ -7,8 +7,9 @@ from .app import get_cloudflared_url
 
 class CloudflaredUrlTests(unittest.TestCase):
     def test_no_log_file_returns_none(self):
-        # simulate log file not existing
-        with mock.patch("pathlib.Path.exists", return_value=False):
+        # simulate log file not existing and journal failing
+        with mock.patch("pathlib.Path.exists", return_value=False), \
+             mock.patch("subprocess.check_output", side_effect=Exception("fail")):
             self.assertIsNone(get_cloudflared_url())
 
     def test_parses_url_from_log(self):
@@ -33,6 +34,19 @@ class CloudflaredUrlTests(unittest.TestCase):
              mock.patch("builtins.open", mock.mock_open(read_data=fake)):
             url = get_cloudflared_url()
             self.assertEqual(url, "https://bar.trycloudflare.com")
+
+
+
+    def test_fallback_to_journal(self):
+        fake = (
+            "noise\n"
+            "Your quick Tunnel has been created! Visit it at https://baz.trycloudflare.com\n"
+        )
+        # simulate missing/empty log file but valid journal output
+        with mock.patch("pathlib.Path.exists", return_value=False), \
+             mock.patch("subprocess.check_output", return_value=fake):
+            url = get_cloudflared_url()
+            self.assertEqual(url, "https://baz.trycloudflare.com")
 
 
 if __name__ == "__main__":
