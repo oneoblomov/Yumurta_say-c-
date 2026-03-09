@@ -166,6 +166,8 @@ LOG_FILE="$WORK_DIR/setup.log"
 
 echo -e "${YELLOW}3. Python bağımlılıkları yükleniyor...${NC}"
 cd "$WORK_DIR"
+
+source .venv/bin/activate 2>/dev/null || python3 -m venv .venv >> "$LOG_FILE" 2>&1 && source .venv/bin/activate
 python3 -m pip install --upgrade pip >> "$LOG_FILE" 2>&1
 python3 -m pip install -r requirements.txt >> "$LOG_FILE" 2>&1
 if [ -f requirements_web.txt ]; then
