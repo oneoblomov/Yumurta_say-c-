@@ -10,7 +10,13 @@ NC='\033[0m'
 
 REPO_OWNER="oneoblomov"
 REPO_NAME="Yumurta_say-c-"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# determine script directory; when running via curl|bash BASH_SOURCE may be unset
+if [ -n "${BASH_SOURCE[0]:-}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    # fall back to current working directory
+    SCRIPT_DIR="$(pwd)"
+fi
 TARGET_DIR="$SCRIPT_DIR"
 
 if [ ! -f "$TARGET_DIR/main.py" ]; then
