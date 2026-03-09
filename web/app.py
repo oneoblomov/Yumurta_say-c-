@@ -72,23 +72,20 @@ ws_connections: List[WebSocket] = []
 
 def get_cloudflared_url() -> Optional[str]:
     """Try to extract the public URL issued by cloudflared from the
-    systemd journal. Returns None if it can't be found.
+    log file. Returns None if it can't be found.
 
     This is intended for "quick tunnels" started by the service file,
     which log a line like "Your quick Tunnel has been created! Visit it
     at https://...".  A more robust alternative would be to use a named
     tunnel and query the Cloudflare API, but for the typical out‑of‑box
-    installation the journal is sufficient.
+    installation the log file is sufficient.
     """
+    log_file = Path("/home/azmarge/cloudflared.log")
+    if not log_file.exists():
+        return None
     try:
-        output = subprocess.check_output(
-            [
-                "journalctl", "-u", "cloudflared.service", "-n", "50",
-                "--no-pager",
-            ],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
+        with open(log_file, "r") as f:
+            lines = f.readlines()
     except Exception:
         return None
 
@@ -96,7 +93,7 @@ def get_cloudflared_url() -> Optional[str]:
     # are the only ones we expect here so we can be specific.
     import re
     pattern = re.compile(r"https?://[\w\-.]+\.trycloudflare\.com[\w\-/]*")
-    for line in reversed(output.splitlines()):
+    for line in reversed(lines):
         m = pattern.search(line)
         if m:
             return m.group(0)
