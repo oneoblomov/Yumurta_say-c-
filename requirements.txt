@@ -1,6 +1,7 @@
 opencv-python
 fastapi
-uvicorn
+uvicorn[standard]
+websocket-client
 ultralytics
 numpy
 jinja2
