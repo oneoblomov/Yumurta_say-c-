@@ -191,32 +191,25 @@ echo -e "${GREEN}✓ Sürüm kaydı tamamlandı.${NC}"
 
 echo -e "${YELLOW}6. Systemd dosyaları kuruluyor...${NC}"
 sudo cp systemd/*.service /etc/systemd/system/ >> "$LOG_FILE" 2>&1
-sudo cp systemd/*.timer /etc/systemd/system/ >> "$LOG_FILE" 2>&1
+# timers may not exist if removed earlier
+if compgen -G "systemd/*.timer" > /dev/null; then
+    sudo cp systemd/*.timer /etc/systemd/system/ >> "$LOG_FILE" 2>&1
+fi
 sudo systemctl daemon-reload >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Systemd servisleri kuruldu.${NC}"
 
 echo -e "${YELLOW}7. Servisler etkinleştiriliyor...${NC}"
 sudo systemctl enable runpy.service >> "$LOG_FILE" 2>&1
 sudo systemctl enable cloudflared.service >> "$LOG_FILE" 2>&1
-sudo systemctl enable egg-counter-start.timer >> "$LOG_FILE" 2>&1
-sudo systemctl enable egg-counter-stop.timer >> "$LOG_FILE" 2>&1
-sudo systemctl enable update.timer >> "$LOG_FILE" 2>&1
-sudo systemctl enable health-check.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler etkinleştirildi.${NC}"
 
 echo -e "${YELLOW}8. Servisler başlatılıyor...${NC}"
 sudo systemctl start runpy.service >> "$LOG_FILE" 2>&1
 sudo systemctl start cloudflared.service >> "$LOG_FILE" 2>&1
-sudo systemctl start egg-counter-start.timer >> "$LOG_FILE" 2>&1
-sudo systemctl start egg-counter-stop.timer >> "$LOG_FILE" 2>&1
-sudo systemctl start update.timer >> "$LOG_FILE" 2>&1
-sudo systemctl start health-check.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler başlatıldı.${NC}"
 
-echo -e "${YELLOW}9. Log dosyaları hazırlanıyor...${NC}"
-touch "$WORK_DIR/update.log"
-touch "$WORK_DIR/health.log"
-echo -e "${GREEN}✓ Log dosyaları hazır.${NC}"
+# log dosyaları servislere göre artık oluşturulmuyor (update/health kaldırıldı)
+
 
 echo -e "${YELLOW}10. Kurulum doğrulanıyor...${NC}"
 sleep 5
@@ -238,10 +231,10 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "Yuklenen surum: ${YELLOW}v$LATEST_VERSION${NC}"
 echo -e "Web arayuzu: ${YELLOW}http://localhost:8000${NC}"
-echo -e "Otomatik guncelleme: ${YELLOW}GitHub Release + update.timer${NC}"
-echo -e ""
-echo -e "Log dosyalari:"
-echo -e "  Kurulum: ${YELLOW}$LOG_FILE${NC}"
+# not: artık otomatik güncelleme timerı yok
+ echo -e ""
+ echo -e "Log dosyalari:"
+ echo -e "  Kurulum: ${YELLOW}$LOG_FILE${NC}"
 echo -e "  Guncelleme: ${YELLOW}$WORK_DIR/update.log${NC}"
 echo -e "  Saglik: ${YELLOW}$WORK_DIR/health.log${NC}"
 echo -e ""
