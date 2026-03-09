@@ -35,11 +35,32 @@ def main():
     import uvicorn
     version_label = display_version(read_version())
 
+    def _read_cloudflare_url():
+        # prefer environment variable (can be set by systemd EnvironmentFile)
+        import os, re
+        url = os.environ.get('CLOUDFLARED_URL')
+        if url:
+            return url
+        # try parsing the log file produced by the service
+        log_path = ROOT / 'logs' / 'cloudflared.log'
+        try:
+            text = log_path.read_text()
+        except Exception:
+            return None
+        m = re.search(r'https://[a-zA-Z0-9\-]+\.trycloudflare\.com', text)
+        if m:
+            return m.group(0)
+        return None
+
+    cf_url = _read_cloudflare_url()
+
     print(f"\n{'='*60}")
     print(f"  YUMURTA SAYICI WEB ARAYÜZÜ {version_label}")
     print(f"  Azim-Tav Endüstriyel Sayım Sistemi")
     print(f"{'='*60}")
     print(f"  Adres   : http://{args.host}:{args.port}")
+    if cf_url:
+        print(f"  Cloudflared Tunel: {cf_url}")
     print(f"  Reload  : {'Açık' if args.reload else 'Kapalı'}")
     print(f"  Workers : {args.workers}")
     print(f"{'='*60}\n")

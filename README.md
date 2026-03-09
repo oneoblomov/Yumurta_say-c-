@@ -52,12 +52,16 @@ pip install -r requirements.txt
 
 ```bash
 python run_web.py --reload
-cloudflared tunnel --url http://localhost:8000
+cloudflared tunnel --url http://localhost:8000 \
+    --loglevel info --logfile /home/azmarge/Desktop/Azim-Tav/Yumurta_sayıcı/logs/cloudflared.log
 ```
 
 > 4.1. ile 4.2. adımlarını farklı terminalde çalıştırın.
 
-- Sonrasında cloudflared size bir URL verecektir. Bu URL'yi tarayıcınızda açarak uygulamaya erişebilirsiniz.
+- cloudflared size bir URL verecektir. `run_web.py` başladığında bu adresin nereye yönlendiğini
+  konsolda görürsünüz ve web arayüzündeki **Ayarlar** sayfasında da tünelin
+  public adresi listelenir. Log dosyası (`logs/cloudflared.log`) üzerinden de
+  URL’ye erişilebilir.
 
 ---
 

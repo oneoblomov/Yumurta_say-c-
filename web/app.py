@@ -61,19 +61,43 @@ def _lang(request: Request) -> str:
     return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANG
 
 
+def get_cloudflare_url() -> Optional[str]:
+    """Return the currently active public Cloudflare tunnel URL if known.
+
+    It first checks an environment variable (useful for systemd
+    EnvironmentFile), then falls back to parsing the log file that the
+    service writes to. Returns None when no URL can be determined.
+    """
+    import os, re
+    url = os.environ.get('CLOUDFLARED_URL')
+    if url:
+        return url
+    log_path = ROOT_DIR / 'logs' / 'cloudflared.log'
+    try:
+        text = log_path.read_text()
+    except Exception:
+        return None
+    m = re.search(r'https://[a-zA-Z0-9\-]+\.trycloudflare\.com', text)
+    if m:
+        return m.group(0)
+    return None
+
+
 def _ctx(request: Request, **extra) -> dict:
     """Template context oluştur."""
     lang = _lang(request)
     tr = load_translations(lang)
-    return {
+    ctx = {
         "request": request,
         "lang": lang,
         "langs": SUPPORTED_LANGUAGES,
         "t": tr,
         "alert_count": db.get_unacknowledged_count(),
         "show_test_page": db.get_setting("show_test_page", "1") == "1",
+        "cloudflare_url": get_cloudflare_url(),
         **extra,
     }
+    return ctx
 
 
 def _is_htmx(request: Request) -> bool:
