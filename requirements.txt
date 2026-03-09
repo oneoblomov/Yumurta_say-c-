@@ -11,3 +11,5 @@ openpyxl
 fpdf2
 optuna
 lab
+openvino
+openvino-telemetry

@@ -14,7 +14,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=OPENCV_FFMPEG_CAPTURE_OPTIONS=threads;1|fflags;nobuffer
 Environment=OPENCV_FFMPEG_MULTITHREADED=0
 # Hata durumunda otomatik tamir: watchdog ile
-WatchdogSec=30
+WatchdogSec=300
 # Hata loglaması
 StandardOutput=journal
 StandardError=journal
