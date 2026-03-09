@@ -6,8 +6,8 @@ Wants=network.target
 [Service]
 Type=simple
 User=azmarge
-WorkingDirectory=/home/kaplan/Desktop/Azim-Tav/Yumurta_sayıcı
-ExecStart=/usr/bin/python3 /home/kaplan/Desktop/Azim-Tav/Yumurta_sayıcı/run_web.py --host 0.0.0.0 --port 8000
+WorkingDirectory=%h/Yumurta_sayıcı
+ExecStart=/usr/bin/python3 %h/Yumurta_sayıcı/run_web.py --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
