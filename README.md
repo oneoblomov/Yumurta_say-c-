@@ -1,5 +1,12 @@
 # AZIM-TAV
 
+tek satırda kurulum
+
+```shell
+apt install -y curl #eğer yüklü degilse
+curl -fsSL https://raw.githubusercontent.com/oneoblomov/Yumurta_say-c-/main/setup.sh | bash
+```
+
 ## Guncelleme Sistemi
 
 Bu proje artik GitHub Release paketleri ile guncellenir.
@@ -61,3 +68,11 @@ cloudflared tunnel --url http://localhost:8000
 > python run_web.py --reload
 
 - Sonrasında `http://<IP_ADDRESS>:8000` adresine giderek uygulamaya erişebilirsiniz. `<IP_ADDRESS>` kısmını kendi IP adresinizle değiştirin.
+
+## Test ortamı
+
+```shell
+# Şu anda sorunlu düzenlenecek.(ek adımlar isteniyor)
+docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+docker run --rm --platform linux/arm64 -it debian:bookworm bash
+```
