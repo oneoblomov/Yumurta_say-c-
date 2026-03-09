@@ -539,9 +539,7 @@ class PipelineManager:
         """08-18 arası her 5 saniyede bir kamerayı kontrol et."""
         while self._running:
             now = datetime.now().time()
-            # Geçici test: her zaman kontrol et (saat aralığı devre dışı)
-            # if datetime.time(hour=8) <= now < datetime.time(hour=18):
-            if True:  # Geçici: her zaman aktif
+            if datetime.time(hour=8) <= now < datetime.time(hour=18):
                 if not self.is_open():
                     print("[WATCHDOG] Kamera kapalı, yeniden açılıyor")
                     try:
