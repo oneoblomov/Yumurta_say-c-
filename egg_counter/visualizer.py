@@ -222,7 +222,7 @@ class Visualizer:
                 zone[:] = color
                 cv2.addWeighted(zone, 0.12, roi_slice, 0.88, 0, roi_slice)
 
-        cv2.putText(frame, "SAYIM CIZGISI", (10, line_y - 10),
+        cv2.putText(frame, "", (10, line_y - 10),
                     self._font, 0.4, color, 1, cv2.LINE_AA)
 
     def _draw_count_flash(self, frame: np.ndarray, event: dict):

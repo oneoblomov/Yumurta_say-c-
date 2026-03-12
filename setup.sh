@@ -217,8 +217,8 @@ for u in runpy.service cloudflared.service; do
     sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
     sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
 done
-# timer'ları da durdur/devre dışı bırak
-for u in cam-watchdog.timer; do
+# eski kamera failsafe birimlerini de kaldır
+for u in cam-watchdog.timer cam-watchdog.service; do
     sudo systemctl stop "$u" >> "$LOG_FILE" 2>&1 || true
     sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
     sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
@@ -235,7 +235,6 @@ echo -e "${GREEN}✓ Systemd servisleri kuruldu.${NC}"
 echo -e "${YELLOW}7. Servisler etkinleştiriliyor...${NC}"
 sudo systemctl enable runpy.service >> "$LOG_FILE" 2>&1
 sudo systemctl enable cloudflared.service >> "$LOG_FILE" 2>&1
-sudo systemctl enable cam-watchdog.timer >> "$LOG_FILE" 2>&1
 echo -e "${GREEN}✓ Servisler etkinleştirildi.${NC}"
 
 echo -e "${YELLOW}8. Servisler başlatılıyor...${NC}"
@@ -248,18 +247,6 @@ for u in runpy.service cloudflared.service; do
         failed=1
     fi
 done
-
-if systemctl is-active --quiet cam-watchdog.timer; then
-    if ! sudo systemctl restart cam-watchdog.timer >> "$LOG_FILE" 2>&1; then
-        echo -e "${RED}✗ cam-watchdog.timer yeniden başlatılamadı.${NC}"
-        failed=1
-    fi
-else
-    if ! sudo systemctl start cam-watchdog.timer >> "$LOG_FILE" 2>&1; then
-        echo -e "${RED}✗ cam-watchdog.timer başlatılamadı.${NC}"
-        failed=1
-    fi
-fi
 
 if [ "$failed" -eq 0 ]; then
     echo -e "${GREEN}✓ Servisler başlatıldı.${NC}"
@@ -282,12 +269,6 @@ if systemctl is-active --quiet cloudflared.service; then
     echo -e "${GREEN}✓ cloudflared.service aktif${NC}"
 else
     echo -e "${RED}✗ cloudflared.service aktif değil${NC}"
-fi
-
-if systemctl is-enabled --quiet cam-watchdog.timer; then
-    echo -e "${GREEN}✓ cam-watchdog.timer etkin${NC}"
-else
-    echo -e "${RED}✗ cam-watchdog.timer etkin değil${NC}"
 fi
 
 echo -e "${GREEN}========================================${NC}"

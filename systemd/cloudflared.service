@@ -1,22 +1,14 @@
 [Unit]
 Description=Cloudflare Tunnel for Yumurta Sayıcı
-After=network-online.target
-Wants=network-online.target
-Requires=runpy.service
+After=network-online.target runpy.service
+Wants=network-online.target runpy.service
 
 [Service]
 Type=simple
 User=azmarge
 ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:8000
-Restart=on-failure
+Restart=always
 RestartSec=10
-# Hata durumunda otomatik tamir: yeniden başlatma
-WatchdogSec=60
-# Ağ bağlantısı kaybında yeniden dene
-RestartPreventExitStatus=1 2 3 4 5 6 7 8 9 10
-# Loglama – yazıları hem journal hem de dosyaya alın
-StandardOutput=append:/home/azmarge/cloudflared.log
-StandardError=append:/home/azmarge/cloudflared.log
 
 [Install]
 WantedBy=multi-user.target

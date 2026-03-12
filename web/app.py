@@ -184,42 +184,11 @@ ws_connections: List[WebSocket] = []
 # ============================================================ Helpers
 
 def get_cloudflared_url() -> Optional[str]:
-    """Try to extract the public URL issued by cloudflared from the
-    log file. Returns None if it can't be found.
-
-    This is intended for "quick tunnels" started by the service file,
-    which log a line like "Your quick Tunnel has been created! Visit it
-    at https://...".  A more robust alternative would be to use a named
-    tunnel and query the Cloudflare API, but for the typical out‑of‑box
-    installation the log file is sufficient.
-    """
-    log_file = Path("/home/azmarge/cloudflared.log")
-    url = None
-
-    # try the log file first (systemd will append here)
-    if log_file.exists():
-        try:
-            with open(log_file, "r") as f:
-                lines = f.readlines()
-        except Exception:
-            lines = []
-        import re
-        pattern = re.compile(r"https?://[\w\-.]+\.trycloudflare\.com[\w\-/]*")
-        for line in reversed(lines):
-            m = pattern.search(line)
-            if m:
-                url = m.group(0)
-                break
-
-    if url:
-        return url
-
-    # fallback to journalctl; may fail if the web service user isn't
-    # permitted, but nothing lost by trying
+    """Extract the public URL issued by cloudflared from the systemd journal."""
     try:
         output = subprocess.check_output(
             [
-                "journalctl", "-u", "cloudflared.service", "-n", "50",
+                "journalctl", "-u", "cloudflared.service", "-n", "100",
                 "--no-pager",
             ],
             text=True,
