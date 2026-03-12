@@ -10,9 +10,11 @@ import csv
 import json
 import asyncio
 import subprocess
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import (
     FastAPI, Request, WebSocket, WebSocketDisconnect,
@@ -202,8 +204,67 @@ def get_cloudflared_url() -> Optional[str]:
     for line in reversed(output.splitlines()):
         m = pattern.search(line)
         if m:
-            return m.group(0)
+            parsed = urlsplit(m.group(0))
+            return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
     return None
+
+
+def _month_bounds(month_value: Optional[str]) -> tuple[date, date, str, str, str]:
+    today = date.today()
+    if month_value:
+        try:
+            month_start = datetime.strptime(month_value, "%Y-%m").date().replace(day=1)
+        except ValueError:
+            month_start = today.replace(day=1)
+    else:
+        month_start = today.replace(day=1)
+
+    last_day = monthrange(month_start.year, month_start.month)[1]
+    month_end = month_start.replace(day=last_day)
+
+    prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
+    next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
+    return month_start, month_end, month_start.strftime("%Y-%m"), prev_month, next_month
+
+
+def _build_stats_calendar(month_value: Optional[str]) -> Dict[str, object]:
+    month_start, month_end, current_month, prev_month, next_month = _month_bounds(month_value)
+    rows = db.get_daily_summaries(month_start.isoformat(), month_end.isoformat(), limit=40)
+    counts = {row["date"]: row["total_count"] for row in rows}
+    leading = month_start.weekday()
+    total_days = monthrange(month_start.year, month_start.month)[1]
+    cells: List[Dict[str, object]] = []
+
+    for _ in range(leading):
+        cells.append({"empty": True})
+
+    max_count = max(counts.values(), default=0)
+    for day_num in range(1, total_days + 1):
+        day_date = month_start.replace(day=day_num)
+        iso = day_date.isoformat()
+        count = counts.get(iso, 0)
+        level = 0 if max_count == 0 or count == 0 else min(4, max(1, int((count / max_count) * 4)))
+        cells.append({
+            "empty": False,
+            "day": day_num,
+            "date": iso,
+            "count": count,
+            "is_today": day_date == date.today(),
+            "level": level,
+        })
+
+    while len(cells) % 7 != 0:
+        cells.append({"empty": True})
+
+    month_label = month_start.strftime("%B %Y")
+    return {
+        "month": current_month,
+        "label": month_label,
+        "prev_month": prev_month,
+        "next_month": next_month,
+        "weekdays": ["Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pa"],
+        "cells": cells,
+    }
 
 
 def _lang(request: Request) -> str:
@@ -295,6 +356,7 @@ async def records_page(request: Request,
 @app.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request):
     days = int(request.query_params.get("days", "30"))
+    month_value = request.query_params.get("month")
     ctx = _ctx(
         request,
         page="stats",
@@ -307,6 +369,7 @@ async def stats_page(request: Request):
         daily_trend=json.dumps(db.get_daily_trend(days)),
         monthly_trend=json.dumps(db.get_monthly_trend()),
         hourly_dist=json.dumps(db.get_hourly_distribution()),
+        calendar_data=_build_stats_calendar(month_value),
         goals=db.get_active_goals(),
         days=days,
     )

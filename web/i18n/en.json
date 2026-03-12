@@ -59,6 +59,7 @@
         "daily_avg": "Daily Average (30 days)",
         "peak": "Peak Day",
         "goals": "Active Goals",
+        "calendar": "Calendar",
         "daily_trend": "Daily Trend",
         "monthly_trend": "Monthly Trend",
         "hourly": "Hourly Distribution (Today)",

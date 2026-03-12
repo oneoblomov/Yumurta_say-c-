@@ -40,6 +40,14 @@ class CloudflaredUrlTests(unittest.TestCase):
             url = get_cloudflared_url()
             self.assertEqual(url, "https://baz.trycloudflare.com")
 
+    def test_strips_path_from_cloudflare_url(self):
+        fake = (
+            "GET https://demo.trycloudflare.com/api/stream 200\n"
+        )
+        with mock.patch("subprocess.check_output", return_value=fake):
+            url = get_cloudflared_url()
+            self.assertEqual(url, "https://demo.trycloudflare.com")
+
 
 if __name__ == "__main__":
     unittest.main()

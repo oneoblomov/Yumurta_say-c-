@@ -66,14 +66,14 @@
         />
         <!-- Overlay: Count Display -->
         <div
-          class="absolute top-4 right-4 bg-black/60 backdrop-blur-sm rounded-xl px-5 py-3 text-white"
+          class="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-xl px-3 py-2 text-white sm:top-4 sm:right-4 sm:px-5 sm:py-3"
         >
           <div
-            class="text-xs uppercase tracking-wider opacity-70 mb-0.5"
+            class="hidden text-[10px] uppercase tracking-wider opacity-70 mb-0.5 sm:block sm:text-xs"
             x-text="t.dashboard?.total || 'Toplam Sayım'"
           ></div>
           <div
-            class="text-4xl font-bold tabular-nums"
+            class="text-3xl font-bold tabular-nums sm:text-4xl"
             x-text="status.total_count || 0"
           ></div>
         </div>
@@ -81,30 +81,30 @@
         <div class="absolute top-4 left-4">
           <span
             x-show="status.running && !status.paused"
-            class="flex items-center gap-1.5 bg-green-500/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full font-medium"
+            class="flex items-center justify-center bg-green-500/90 backdrop-blur-sm text-white rounded-full font-medium w-3 h-3 animate-pulse sm:w-auto sm:h-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs"
           >
             <span
-              class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"
+              class="hidden w-1.5 h-1.5 rounded-full bg-white animate-pulse sm:block"
             ></span>
-            CANLI
+            <span class="hidden sm:inline">CANLI</span>
           </span>
           <span
             x-show="status.running && status.paused"
-            class="flex items-center gap-1.5 bg-yellow-500/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full font-medium"
+            class="flex items-center justify-center bg-yellow-500/90 backdrop-blur-sm text-white rounded-full font-medium w-3 h-3 sm:w-auto sm:h-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs"
           >
-            <i data-lucide="pause" class="w-3 h-3"></i>
-            DURAKLATILDI
+            <i data-lucide="pause" class="hidden w-3 h-3 sm:block"></i>
+            <span class="hidden sm:inline">DURAKLATILDI</span>
           </span>
           <span
             x-show="!status.running"
-            class="flex items-center gap-1.5 bg-gray-500/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full font-medium"
+            class="flex items-center justify-center bg-gray-500/90 backdrop-blur-sm text-white rounded-full font-medium w-3 h-3 sm:w-auto sm:h-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs"
           >
-            KAPALI
+            <span class="hidden sm:inline">KAPALI</span>
           </span>
         </div>
         <!-- FPS -->
         <div
-          class="absolute bottom-4 left-4 bg-black/50 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg font-mono"
+          class="absolute bottom-3 left-3 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg font-mono sm:bottom-4 sm:left-4 sm:text-xs"
           x-show="status.running"
         >
           <span x-text="status.fps + ' FPS'"></span>
