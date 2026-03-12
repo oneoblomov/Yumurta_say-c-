@@ -217,12 +217,6 @@ for u in runpy.service cloudflared.service; do
     sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
     sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
 done
-# eski kamera failsafe birimlerini de kaldır
-for u in cam-watchdog.timer cam-watchdog.service; do
-    sudo systemctl stop "$u" >> "$LOG_FILE" 2>&1 || true
-    sudo systemctl disable "$u" >> "$LOG_FILE" 2>&1 || true
-    sudo rm -f "/etc/systemd/system/$u" >> "$LOG_FILE" 2>&1 || true
-done
 # yeni birimleri kopyala
 sudo cp systemd/*.service /etc/systemd/system/ >> "$LOG_FILE" 2>&1
 # timers may not exist if removed earlier
