@@ -5,9 +5,7 @@
         "records": "Records",
         "stats": "Statistics",
         "logs": "Log History",
-        "settings": "Settings",
-        "test_lab": "Test Mode",
-        "test-lab": "Test Mode"
+        "settings": "Settings"
     },
     "status": {
         "running": "Running",

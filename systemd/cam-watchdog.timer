@@ -2,8 +2,8 @@
 Description=Kamera kontrol zamanlayıcı
 
 [Timer]
-OnCalendar=*-*-* *:*:00/1m
-AccuracySec=30s
+OnCalendar=*-*-* *:*:00/5m
+AccuracySec=1m
 
 [Install]
 WantedBy=timers.target

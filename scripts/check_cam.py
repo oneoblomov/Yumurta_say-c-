@@ -18,9 +18,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "egg_counter.db"
+STATE_PATH = ROOT / "data" / "cam_watchdog_state.json"
 API_BASE = "http://127.0.0.1:8000"
 DEFAULT_START = "08:00"
 DEFAULT_END = "16:00"
+MAX_CONSECUTIVE_API_FAILURES = 3
 
 
 def normalize_schedule(value: str, default: str) -> str:
@@ -80,6 +82,39 @@ def api_post(path: str, payload: dict | None = None) -> dict:
         return json.load(response)
 
 
+def load_state() -> dict:
+    if not STATE_PATH.exists():
+        return {"consecutive_api_failures": 0, "last_error": ""}
+    try:
+        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"consecutive_api_failures": 0, "last_error": ""}
+
+
+def save_state(state: dict) -> None:
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STATE_PATH.write_text(json.dumps(state, ensure_ascii=True), encoding="utf-8")
+
+
+def record_api_failure(message: str) -> int:
+    state = load_state()
+    failures = int(state.get("consecutive_api_failures", 0)) + 1
+    save_state({
+        "consecutive_api_failures": failures,
+        "last_error": message,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    return failures
+
+
+def reset_api_failures() -> None:
+    save_state({
+        "consecutive_api_failures": 0,
+        "last_error": "",
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    })
+
+
 def restart_service() -> None:
     subprocess.run(["systemctl", "restart", "runpy.service"], check=True)
 
@@ -91,9 +126,22 @@ def main() -> int:
     try:
         status = api_get("/api/pipeline/status")
     except urllib.error.URLError as exc:
-        print(f"API erişilemiyor, runpy.service yeniden başlatılıyor: {exc}")
-        restart_service()
+        failures = record_api_failure(str(exc))
+        if should_run and failures >= MAX_CONSECUTIVE_API_FAILURES:
+            print(
+                "API art arda erişilemedi, runpy.service yeniden başlatılıyor: "
+                f"{exc}"
+            )
+            restart_service()
+            reset_api_failures()
+            return 0
+        print(
+            "API erişilemiyor, servis yeniden başlatılmadı "
+            f"({failures}/{MAX_CONSECUTIVE_API_FAILURES}): {exc}"
+        )
         return 0
+
+    reset_api_failures()
 
     if should_run:
         if status.get("running") and not status.get("paused"):
@@ -110,8 +158,16 @@ def main() -> int:
             print(f"Pipeline otomatik başlatıldı: {result}")
             return 0
 
-        print(f"Pipeline başlatılamadı, servis yeniden başlatılıyor: {result}")
-        restart_service()
+        failures = record_api_failure(result.get("error", "pipeline_start_failed"))
+        if failures >= MAX_CONSECUTIVE_API_FAILURES:
+            print(f"Pipeline art arda başlatılamadı, servis yeniden başlatılıyor: {result}")
+            restart_service()
+            reset_api_failures()
+            return 1
+        print(
+            "Pipeline başlatılamadı, yeniden başlatma ertelendi "
+            f"({failures}/{MAX_CONSECUTIVE_API_FAILURES}): {result}"
+        )
         return 1
 
     if status.get("running"):

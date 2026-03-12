@@ -10,9 +10,6 @@ class DummyDB:
         self.last_args = None
         self.session_created = False
         self.settings = {
-            "test_mode_enabled": "1",
-            "test_expected_batch": "55",
-            "test_window_seconds": "5",
             "camera_active_start": "08:00",
             "camera_active_end": "16:00",
         }
@@ -78,51 +75,6 @@ class PipelineManagerResetTest(unittest.TestCase):
         # DB should have been updated to zero
         self.assertTrue(self.db.updated)
         self.assertEqual(self.db.last_args, (42, 0))
-
-
-class PipelineManagerTestModeStatsTest(unittest.TestCase):
-    def setUp(self):
-        self.db = DummyDB()
-        self.pm = PipelineManager(db=self.db)
-        self.pm._test_mode_enabled = True
-        self.pm._test_expected_per_series = 55
-        self.pm._test_series_timeout_seconds = 5.0
-        self.pm._total_count = 0
-        self.pm._reset_test_metrics()
-
-    def test_test_mode_batches_and_summary(self):
-        base = 1000.0
-        self.pm._test_started_at = base
-
-        # Seri-1: 55 yumurta, sonra 5+ sn sessizlikte kapanır -> [55/55]
-        for i in range(55):
-            self.pm._on_test_egg_counted({"timestamp": base + (i * 0.02)})
-        self.pm._close_timed_out_series(now=base + 5.6)
-
-        # Seri-2: 54 yumurta, sonra kapanır -> [54/55]
-        s2 = base + 10.0
-        for i in range(54):
-            self.pm._on_test_egg_counted({"timestamp": s2 + (i * 0.02)})
-        self.pm._close_timed_out_series(now=s2 + 5.6)
-
-        # Seri-3: 56 yumurta, sonra kapanır -> [56/55]
-        s3 = base + 20.0
-        for i in range(56):
-            self.pm._on_test_egg_counted({"timestamp": s3 + (i * 0.02)})
-        # ensure at least 5s idle after last egg (last egg at s3+1.1)
-        self.pm._close_timed_out_series(now=s3 + 6.2)
-
-        status = self.pm.get_test_status()
-        self.assertTrue(status["enabled"])
-        self.assertEqual(status["summary"]["batch_count"], 3)
-        self.assertEqual(status["summary"]["actual_total"], 165)
-        self.assertEqual(status["summary"]["expected_total"], 165)
-        self.assertEqual(status["summary"]["error_total"], 0)
-        self.assertFalse(status["active_series"]["active"])
-
-        labels = [b["label"] for b in status["batches"]]
-        self.assertEqual(labels, ["[55/55]", "[54/55]", "[56/55]"])
-
 
 class PipelineManagerScheduleTest(unittest.TestCase):
     def setUp(self):

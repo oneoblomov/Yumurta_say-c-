@@ -34,6 +34,7 @@ class Database:
             Database._local.conn = sqlite3.connect(self.db_path, timeout=10)
             Database._local.conn.row_factory = sqlite3.Row
             Database._local.conn.execute("PRAGMA journal_mode=WAL")
+            Database._local.conn.execute("PRAGMA synchronous=NORMAL")
             Database._local.conn.execute("PRAGMA foreign_keys=ON")
         return Database._local.conn
 
@@ -132,6 +133,7 @@ class Database:
         self._ensure_column("app_versions", "release_url", "TEXT")
         self._ensure_column("app_versions", "release_published_at", "TEXT")
         self._ensure_column("app_versions", "installed_by", "TEXT DEFAULT 'manual'")
+        self._remove_obsolete_settings()
 
     def _ensure_column(self, table_name: str, column_name: str, column_def: str):
         columns = {
@@ -142,6 +144,19 @@ class Database:
                 f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}"
             )
             self.conn.commit()
+
+    def _remove_obsolete_settings(self):
+        obsolete_keys = (
+            "show_test_page",
+            "test_mode_enabled",
+            "test_expected_batch",
+            "test_window_seconds",
+        )
+        self.conn.execute(
+            "DELETE FROM settings WHERE key IN (?, ?, ?, ?)",
+            obsolete_keys,
+        )
+        self.conn.commit()
 
     def _init_default_settings(self):
         defaults = [
@@ -194,11 +209,6 @@ class Database:
             ("update_last_error", "", "update", "Son güncelleme hatası"),
             ("update_last_notified_version", "", "update", "Bildirim gönderilen son sürüm"),
             ("update_last_installed_version", "", "update", "Kurulan son sürüm"),
-            # Test Mode
-            ("show_test_page", "1", "test", "Test sayfasını menüde göster"),
-            ("test_mode_enabled", "1", "test", "5 sn test penceresi analizi"),
-            ("test_expected_batch", "55", "test", "Pencere başına beklenen yumurta"),
-            ("test_window_seconds", "5", "test", "Test pencere süresi (sn)"),
         ]
         for key, value, category, desc in defaults:
             self.conn.execute(
@@ -207,23 +217,6 @@ class Database:
                 (key, value, category, desc),
             )
         self.conn.commit()
-
-        # migration: old installations may still have 30 as the expected batch size
-        try:
-            cur = self.conn.execute(
-                "SELECT value FROM settings WHERE key = ?", ("test_expected_batch",)
-            )
-            row = cur.fetchone()
-            if row is not None and row[0].strip() == "30":
-                # bump to new default of 55
-                self.conn.execute(
-                    "UPDATE settings SET value = ? WHERE key = ?",
-                    ("55", "test_expected_batch"),
-                )
-                self.conn.commit()
-        except Exception:
-            # ignore migration errors, not critical
-            pass
 
     # ============================================================ Sessions
     def create_session(self, source: str = "0",

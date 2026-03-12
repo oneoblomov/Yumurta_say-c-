@@ -125,19 +125,6 @@
             <span class="sidebar-tooltip" x-text="t.nav?.[item.key] || item.key"></span>
           </a>
         </template>
-        {% if show_test_page %}
-        <a href="/test-lab"
-           hx-get="/test-lab"
-           hx-target="#main-content"
-           hx-push-url="true"
-           @click="sidebarOpen=false; currentPage='test-lab'"
-           :class="currentPage==='test-lab' ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-700'"
-           class="sidebar-nav-item relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors">
-          <i data-lucide="flask-conical" class="w-4 h-4 shrink-0"></i>
-          <span :class="sidebarCollapsed ? 'lg:hidden' : ''" class="truncate" x-text="t.nav?.test_lab || 'Test Modu'"></span>
-          <span class="sidebar-tooltip" x-text="t.nav?.test_lab || 'Test Modu'"></span>
-        </a>
-        {% endif %}
       </nav>
 
       <!-- Sidebar Footer: pipeline status only -->
