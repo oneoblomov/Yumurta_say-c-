@@ -4,7 +4,8 @@ After=network.target
 Wants=network.target
 
 [Service]
-Type=simple
+# use notify so systemd provides NOTIFY_SOCKET and honors sd_notify messages
+Type=notify
 User=azmarge
 WorkingDirectory=/home/azmarge/Yumurta_sayıcı
 ExecStart=/home/azmarge/Yumurta_sayıcı/.venv/bin/python /home/azmarge/Yumurta_sayıcı/run_web.py --host 0.0.0.0 --port 8000
@@ -15,6 +16,7 @@ Environment=OPENCV_FFMPEG_CAPTURE_OPTIONS=threads;1|fflags;nobuffer
 Environment=OPENCV_FFMPEG_MULTITHREADED=0
 # Hata durumunda otomatik tamir: watchdog ile
 WatchdogSec=300
+NotifyAccess=all
 # Hata loglaması
 StandardOutput=journal
 StandardError=journal

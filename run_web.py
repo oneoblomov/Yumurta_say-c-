@@ -44,6 +44,18 @@ def main():
     print(f"  Azim-Tav Endüstriyel Sayım Sistemi")
     print(f"{'='*60}")
     print(f"  Adres   : http://{args.host}:{args.port}")
+    # notify systemd that the service has finished initialization
+    notify_sock = os.environ.get("NOTIFY_SOCKET")
+    if notify_sock:
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            if notify_sock[0] == "@":
+                notify_sock = "\0" + notify_sock[1:]
+            s.connect(notify_sock)
+            s.sendall(b"READY=1")
+            s.close()
+        except Exception:
+            pass
     # try to show the cloudflared tunnel URL if the service has logged one
     try:
         from web.app import get_cloudflared_url

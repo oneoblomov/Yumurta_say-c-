@@ -10,6 +10,8 @@ import csv
 import json
 import asyncio
 import subprocess
+import os
+import socket
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -163,6 +165,36 @@ async def startup_event():
     if schedule_controller_task is None or schedule_controller_task.done():
         schedule_controller_task = asyncio.create_task(_camera_schedule_loop())
     _enforce_camera_schedule(reason="startup")
+
+    # systemd notification: READY and periodic WATCHDOG pings
+    notify_sock = os.environ.get("NOTIFY_SOCKET")
+    if notify_sock:
+        # send initial READY=1
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            if notify_sock[0] == "@":
+                notify_sock = "\0" + notify_sock[1:]
+            s.connect(notify_sock)
+            s.sendall(b"READY=1")
+            s.close()
+        except Exception:
+            pass
+
+        async def _notify_watchdog():
+            while True:
+                try:
+                    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+                    if notify_sock[0] == "@":
+                        s.connect("\0" + notify_sock[1:])
+                    else:
+                        s.connect(notify_sock)
+                    s.sendall(b"WATCHDOG=1")
+                    s.close()
+                except Exception:
+                    pass
+                await asyncio.sleep(30)
+
+        asyncio.create_task(_notify_watchdog())
 
 @app.on_event("shutdown")
 async def shutdown_event():
