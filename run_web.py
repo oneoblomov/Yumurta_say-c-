@@ -12,6 +12,10 @@ Kullanım:
 import argparse
 import sys
 from pathlib import Path
+import os
+import socket
+import threading
+import time
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -51,6 +55,32 @@ def main():
     print(f"  Reload  : {'Açık' if args.reload else 'Kapalı'}")
     print(f"  Workers : {args.workers}")
     print(f"{'='*60}\n")
+
+    # start watchdog keep‑alive thread if systemd is listening
+    def _watchdog_pinger(interval: float = 30.0) -> None:
+        """Periodically send WATCHDOG=1 to the systemd notify socket.
+        Safe to call even when NOTIFY_SOCKET is unset; the loop will exit
+        immediately in that case.
+        """
+        sockpath = os.environ.get("NOTIFY_SOCKET")
+        if not sockpath:
+            return
+        # abstract namespace if leading @
+        if sockpath[0] == "@":
+            sockpath = "\0" + sockpath[1:]
+        while True:
+            try:
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+                s.connect(sockpath)
+                s.sendall(b"WATCHDOG=1")
+                s.close()
+            except Exception:
+                # ignore failures; we'll try again later
+                pass
+            time.sleep(interval)
+
+    # launch pinger thread and detach so it lives with the process
+    threading.Thread(target=_watchdog_pinger, daemon=True).start()
 
     uvicorn.run(
         "web.app:app",
