@@ -407,7 +407,7 @@ class EggCountingPipeline:
                         self._detector.reset_tracker()
                         consecutive_failures = 0
                         continue
-                    elif consecutive_failures > 90:  # ~3 saniye (30 FPS * 3) kısa kesintileri tolere et
+                    elif not self._capture.is_open():  # Kamera bağlantısı kesilmiş olabilir
                         print("[PIPELINE] Kamera bağlantısı kesildi, yeniden bağlanılıyor…")
                         try:
                             self._capture.reopen()
@@ -420,6 +420,7 @@ class EggCountingPipeline:
                             print(f"[PIPELINE] Kamera yeniden açılamadı: {exc}")
                             break
                     time.sleep(0.01)
+                    
                     continue
 
                 consecutive_failures = 0
