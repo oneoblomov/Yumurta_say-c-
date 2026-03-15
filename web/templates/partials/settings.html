@@ -296,6 +296,14 @@
                 <p class="text-xs text-gray-400 mt-0.5">Titreşim azaltma</p>
               </div>
             </label>
+            <label :class="s.dataset_capture_enabled ? 'border-blue-300 bg-blue-50' : 'border-gray-200'"
+                   class="flex items-start gap-3 cursor-pointer p-3 rounded-lg border hover:border-blue-300 transition-colors">
+              <input type="checkbox" x-model="s.dataset_capture_enabled" class="mt-0.5 w-4 h-4 text-primary-600 rounded"/>
+              <div>
+                <p class="text-sm font-medium text-gray-700" x-text="t.settings?.dataset_capture_enabled || 'Veri Seti Kaydi (5 sn)'"></p>
+                <p class="text-xs text-gray-400 mt-0.5" x-text="t.settings?.dataset_capture_hint || 'Yeni yumurta sayildiginda ham goruntu (yazisiz/cizgisiz) kaydeder'"></p>
+              </div>
+            </label>
             <div>
               <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.crop_ud || 'Üst-Alt Kırpma (%)'"></label>
               <input x-model="s.crop_ud" type="number" min="0" max="90"
@@ -311,33 +319,6 @@
       </div>
     </div>
 
-    <!-- ── 6. HEDEFLER ───────────────────────────────────────────────── -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <button @click="toggleGroup('goals')"
-              class="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors">
-        <div class="flex items-center gap-3">
-          <div class="bg-red-50 rounded-lg p-2"><i data-lucide="target" class="w-4 h-4 text-red-500"></i></div>
-          <span class="font-semibold text-gray-700 text-sm" x-text="t.settings?.goals || 'Hedefler'"></span>
-        </div>
-        <i :data-lucide="openGroups.goals ? 'chevron-up' : 'chevron-down'" class="w-4 h-4 text-gray-400"></i>
-      </button>
-      <div x-show="openGroups.goals" class="border-t border-gray-100">
-        <div class="p-5">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.daily_goal || 'Günlük Hedef'"></label>
-              <input x-model="s.daily_goal" type="number" min="0"
-                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
-            </div>
-            <div>
-              <label class="block text-sm text-gray-600 mb-1" x-text="t.settings?.weekly_goal || 'Haftalık Hedef'"></label>
-              <input x-model="s.weekly_goal" type="number" min="0"
-                     class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none" placeholder="0"/>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- ── 7. GÖRÜNÜM & DİL ──────────────────────────────────────────── -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -706,7 +687,7 @@ function settingsPage() {
     return {
         openGroups: {
             camera: true, detector: false, counter: false, tracker: false,
-            preprocessing: false, goals: false, display: false,
+            preprocessing: false, display: false,
             optimize: false, system: false,
         },
         s: {{ settings|tojson|safe }},
@@ -751,13 +732,13 @@ function settingsPage() {
             ['line_position','roi_top','roi_bottom','conf_threshold','iou_threshold','match_thresh'].forEach(k => {
                 if (this.s[k] !== undefined) this.s[k] = parseFloat(this.s[k]);
             });
-            ['camera_width','camera_height','imgsz','track_buffer','daily_goal','weekly_goal','stream_quality','post_cross_drop','crop_ud','crop_lr'].forEach(k => {
+            ['camera_width','camera_height','imgsz','track_buffer','stream_quality','post_cross_drop','crop_ud','crop_lr'].forEach(k => {
                 if (this.s[k] !== undefined) this.s[k] = parseInt(this.s[k]);
             });
           ['camera_active_start', 'camera_active_end'].forEach((key, index) => {
             if (!this.s[key]) this.s[key] = index === 0 ? '08:00' : '16:00';
           });
-          ['enable_clahe','enable_stabilization','update_include_prerelease','update_auto_check','update_auto_install','update_restart_after_install'].forEach(k => {
+            ['enable_clahe','enable_stabilization','dataset_capture_enabled','update_include_prerelease','update_auto_check','update_auto_install','update_restart_after_install'].forEach(k => {
                 const v = this.s[k];
                 this.s[k] = (v === '1' || v === true || v === 'true');
             });
@@ -796,7 +777,7 @@ function settingsPage() {
 
         async saveAll() {
           const boolFields = [
-            'enable_clahe', 'enable_stabilization',
+            'enable_clahe', 'enable_stabilization', 'dataset_capture_enabled',
             'update_include_prerelease', 'update_auto_check',
             'update_auto_install', 'update_restart_after_install'
           ];
@@ -813,12 +794,6 @@ function settingsPage() {
             });
             const d = await r.json();
             if (d.ok) {
-                if (parseInt(this.s.daily_goal) >= 0)
-                    await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
-                        body:JSON.stringify({type:'daily',target:parseInt(this.s.daily_goal)})});
-                if (parseInt(this.s.weekly_goal) >= 0)
-                    await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},
-                        body:JSON.stringify({type:'weekly',target:parseInt(this.s.weekly_goal)})});
               const sr = d.schedule_result;
               if (sr && sr.last_action === 'start_failed') {
                 showToast(sr.last_message || 'Kamera otomatik başlatılamadı', 'error', 5000);

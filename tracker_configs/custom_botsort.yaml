@@ -6,7 +6,7 @@ track_high_thresh: 0.35
 track_low_thresh: 0.05
 new_track_thresh: 0.4
 track_buffer: 30
-match_thresh: 0.7999999999999999
+match_thresh: 0.8
 fuse_score: false
 proximity_thresh: 0.5
 appearance_thresh: 0.25

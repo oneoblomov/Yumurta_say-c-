@@ -188,6 +188,7 @@ class Database:
             # Pipeline
             ("crop_ud", "0", "pipeline", "Üst-alt kırpma (%)"),
             ("crop_lr", "0", "pipeline", "Sol-sağ kırpma (%)"),
+            ("dataset_capture_enabled", "0", "pipeline", "Yeni sayımda ham veri seti görüntüsü kaydı"),
             # Goals
             ("daily_goal", "0", "goals", "Günlük hedef (0=kapalı)"),
             ("weekly_goal", "0", "goals", "Haftalık hedef (0=kapalı)"),
@@ -361,6 +362,24 @@ class Database:
         q += " ORDER BY date DESC LIMIT ?"
         p.append(limit)
         return [dict(r) for r in self.conn.execute(q, p).fetchall()]
+
+    def get_monthly_summaries(self, year: str) -> List[Dict]:
+        """Return per-month totals for a given year."""
+        rows = self.conn.execute(
+            "SELECT substr(date,1,7) as month, SUM(total_count) as total_count "
+            "FROM daily_summaries WHERE substr(date,1,4)=? "
+            "GROUP BY month ORDER BY month DESC",
+            (year,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_yearly_summaries(self) -> List[Dict]:
+        """Return per-year totals."""
+        rows = self.conn.execute(
+            "SELECT substr(date,1,4) as year, SUM(total_count) as total_count "
+            "FROM daily_summaries GROUP BY year ORDER BY year DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_daily_summary(self, date_str: str) -> Optional[Dict]:
         row = self.conn.execute(
@@ -574,6 +593,53 @@ class Database:
         """, (months,)).fetchall()
         return [{"month": r[0], "count": r[1]}
                 for r in reversed(list(rows))]
+
+    def get_year_stats(self, year: str) -> Dict:
+        """Get stats for a specific year."""
+        start = f"{year}-01-01"
+        end = f"{year}-12-31"
+        rows = self.conn.execute("""
+            SELECT SUM(total_count) as total FROM daily_summaries
+            WHERE date BETWEEN ? AND ?
+        """, (start, end)).fetchone()
+        return {
+            "total": rows["total"] or 0 if rows else 0,
+            "year": year,
+        }
+
+    def get_month_stats(self, month: str) -> Dict:
+        """Get stats for a specific month (YYYY-MM)."""
+        start = f"{month}-01"
+        rows = self.conn.execute("""
+            SELECT SUM(total_count) as total, COUNT(*) as days_with_counts,
+                   AVG(total_count) as avg_count, MAX(total_count) as peak
+            FROM daily_summaries WHERE date LIKE ?
+        """, (f"{month}%",)).fetchone()
+        monthly_trend = self.conn.execute("""
+            SELECT date, total_count FROM daily_summaries
+            WHERE date LIKE ? ORDER BY date
+        """, (f"{month}%",)).fetchall()
+        
+        return {
+            "total": rows["total"] or 0 if rows else 0,
+            "days_with_counts": rows["days_with_counts"] or 0 if rows else 0,
+            "avg_count": round(rows["avg_count"] or 0, 1) if rows else 0,
+            "peak": rows["peak"] or 0 if rows else 0,
+            "month": month,
+            "daily_trend": [{"date": r[0], "count": r[1]} for r in monthly_trend],
+        }
+
+    def get_day_stats(self, date_str: str) -> Dict:
+        """Get stats for a specific day."""
+        hourly = self.get_hourly_distribution(date_str)
+        daily = self.get_daily_summary(date_str)
+        return {
+            "date": date_str,
+            "total": daily["total_count"] if daily else 0,
+            "session_count": daily["session_count"] if daily else 0,
+            "hourly_dist": hourly,
+            "daily": daily,
+        }
 
     # ============================================================ Import
     def import_count_events(self, events: List[Dict]) -> int:

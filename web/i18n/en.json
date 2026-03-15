@@ -125,6 +125,8 @@
         "preprocessing": "Preprocessing",
         "enable_clahe": "CLAHE Contrast Enhancement",
         "enable_stabilization": "Vibration Stabilization",
+        "dataset_capture_enabled": "Dataset Capture (5s)",
+        "dataset_capture_hint": "Saves a raw frame (no lines/text) when a new egg is counted",
         "crop_ud": "Up-Down Crop (%)",
         "crop_lr": "Left-Right Crop (%)",
         "goals": "Goals",

@@ -2,7 +2,7 @@
     "app_title": "Yumurta Sayıcı",
     "nav": {
         "dashboard": "Gösterge Paneli",
-        "records": "Kayıtlar",
+        "records": "Özet",
         "stats": "İstatistikler",
         "logs": "Log Geçmişi",
         "settings": "Ayarlar"
@@ -34,7 +34,7 @@
         "no_events": "Henüz sayım yok"
     },
     "records": {
-        "title": "Kayıtlar",
+        "title": "Özet",
         "daily": "Günlük Özet",
         "sessions": "Oturumlar",
         "date": "Tarih",
@@ -125,6 +125,8 @@
         "preprocessing": "Ön İşleme",
         "enable_clahe": "CLAHE Kontrast Artırma",
         "enable_stabilization": "Titreşim Stabilizasyonu",
+        "dataset_capture_enabled": "Veri Seti Kaydı (5 sn)",
+        "dataset_capture_hint": "Yeni yumurta sayıldığında ham görüntü (yazısız/çizgisiz) kaydeder",
         "crop_ud": "Üst-Alt Kırpma (%)",
         "crop_lr": "Sol-Sağ Kırpma (%)",
         "goals": "Hedefler",

@@ -54,7 +54,7 @@
     </div>
 
     <!-- Summary Row -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div class="bg-gradient-to-br from-primary-50 to-blue-50 rounded-xl p-4 border border-primary-100">
             <p class="text-xs text-primary-600 font-medium mb-1" x-text="t.stats?.daily_avg || 'Günlük Ortalama (30 gün)'"></p>
             <p class="text-2xl font-bold text-primary-700">{{ daily_avg }}</p>
@@ -66,17 +66,6 @@
             <p class="text-xs text-green-500">{{ peak_day.date }}</p>
             {% else %}
             <p class="text-2xl font-bold text-green-700">-</p>
-            {% endif %}
-        </div>
-        <div class="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-4 border border-orange-100">
-            <p class="text-xs text-orange-600 font-medium mb-1" x-text="t.stats?.goals || 'Aktif Hedefler'"></p>
-            {% for g in goals %}
-            <p class="text-sm font-medium text-orange-700">
-                {{ g.type|capitalize }}: {{ g.target_count }}
-            </p>
-            {% endfor %}
-            {% if not goals %}
-            <p class="text-orange-400 text-sm">-</p>
             {% endif %}
         </div>
     </div>
@@ -110,55 +99,6 @@
         </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6 max-w-xl mx-auto">
-        <div class="flex items-center justify-between gap-3 mb-4">
-            <div>
-                <h3 class="font-semibold text-sm text-gray-700" x-text="t.stats?.calendar || 'Takvim'"></h3>
-                <p class="text-xs text-gray-400">{{ calendar_data.label }}</p>
-            </div>
-            <div class="flex items-center gap-2">
-                <button
-                    hx-get="/stats?days={{ days }}&month={{ calendar_data.prev_month }}"
-                    hx-target="#main-content"
-                    hx-push-url="true"
-                    class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:border-primary-300 hover:text-primary-700"
-                >
-                    &larr;
-                </button>
-                <button
-                    hx-get="/stats?days={{ days }}&month={{ calendar_data.next_month }}"
-                    hx-target="#main-content"
-                    hx-push-url="true"
-                    class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:border-primary-300 hover:text-primary-700"
-                >
-                    &rarr;
-                </button>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-7 gap-2 text-center text-[11px] font-medium text-gray-400 mb-2">
-            {% for weekday in calendar_data.weekdays %}
-            <div>{{ weekday }}</div>
-            {% endfor %}
-        </div>
-
-        <div class="grid grid-cols-7 gap-2">
-            {% for cell in calendar_data.cells %}
-                {% if cell.empty %}
-                <div class="aspect-square rounded-xl bg-transparent"></div>
-                {% else %}
-                <div class="aspect-square rounded-xl border p-2 transition-colors
-                    {% if cell.is_today %}border-primary-400 ring-2 ring-primary-100{% else %}border-gray-100{% endif %}
-                    {% if cell.level == 0 %}bg-gray-50{% elif cell.level == 1 %}bg-blue-50{% elif cell.level == 2 %}bg-blue-100{% elif cell.level == 3 %}bg-blue-200{% else %}bg-blue-300{% endif %}">
-                    <div class="flex h-full flex-col justify-between">
-                        <span class="text-xs font-semibold {% if cell.is_today %}text-primary-700{% else %}text-gray-700{% endif %}">{{ cell.day }}</span>
-                        <span class="text-[10px] font-medium text-gray-600">{{ cell.count }}</span>
-                    </div>
-                </div>
-                {% endif %}
-            {% endfor %}
-        </div>
-    </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <!-- Hourly Distribution -->

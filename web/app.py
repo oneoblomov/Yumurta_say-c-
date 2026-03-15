@@ -259,46 +259,6 @@ def _month_bounds(month_value: Optional[str]) -> tuple[date, date, str, str, str
     return month_start, month_end, month_start.strftime("%Y-%m"), prev_month, next_month
 
 
-def _build_stats_calendar(month_value: Optional[str]) -> Dict[str, object]:
-    month_start, month_end, current_month, prev_month, next_month = _month_bounds(month_value)
-    rows = db.get_daily_summaries(month_start.isoformat(), month_end.isoformat(), limit=40)
-    counts = {row["date"]: row["total_count"] for row in rows}
-    leading = month_start.weekday()
-    total_days = monthrange(month_start.year, month_start.month)[1]
-    cells: List[Dict[str, object]] = []
-
-    for _ in range(leading):
-        cells.append({"empty": True})
-
-    max_count = max(counts.values(), default=0)
-    for day_num in range(1, total_days + 1):
-        day_date = month_start.replace(day=day_num)
-        iso = day_date.isoformat()
-        count = counts.get(iso, 0)
-        level = 0 if max_count == 0 or count == 0 else min(4, max(1, int((count / max_count) * 4)))
-        cells.append({
-            "empty": False,
-            "day": day_num,
-            "date": iso,
-            "count": count,
-            "is_today": day_date == date.today(),
-            "level": level,
-        })
-
-    while len(cells) % 7 != 0:
-        cells.append({"empty": True})
-
-    month_label = month_start.strftime("%B %Y")
-    return {
-        "month": current_month,
-        "label": month_label,
-        "prev_month": prev_month,
-        "next_month": next_month,
-        "weekdays": ["Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pa"],
-        "cells": cells,
-    }
-
-
 def _lang(request: Request) -> str:
     """İstek dili. Cookie > DB setting > default."""
     lang = request.cookies.get("lang")
@@ -367,47 +327,103 @@ async def dashboard_page(request: Request):
 
 @app.get("/records", response_class=HTMLResponse)
 async def records_page(request: Request,
-                       page_num: int = Query(1, alias="page")):
-    per_page = 20
-    offset = (page_num - 1) * per_page
-    summaries = db.get_daily_summaries(limit=per_page)
-    sessions = db.get_sessions(limit=per_page, offset=offset)
-    total_sessions = db.get_sessions_count()
+                       year: Optional[str] = Query(None),
+                       month: Optional[str] = Query(None),
+                       day: Optional[str] = Query(None)):
+    view = "years"
+    years = []
+    months = []
+    summaries = []
+    year_label = None
+    month_label = None
+    day_label = None
+    
+    # Quick stats (always show at top level)
+    quick_stats = {
+        "today": db.get_today_count(),
+        "week": db.get_week_count(),
+        "month": db.get_month_count(),
+        "all_time": db.get_all_time_count(),
+    }
+    
+    # Stats section data
+    stats_data = {}
+
+    if day:
+        # Day view: show daily details + hourly stats
+        day_stats = db.get_day_stats(day)
+        day_label = day
+        month_label = day[:-3]
+        year_label = day[:4]
+        summaries = [day_stats["daily"]] if day_stats["daily"] else []
+        stats_data = {
+            "hourly_dist": json.dumps(day_stats["hourly_dist"]),
+        }
+        view = "day"
+    elif month:
+        # Month view: show daily summaries for the month + daily trend
+        month_start, month_end, month_key, _, _ = _month_bounds(month)
+        month_label = month_key
+        year_label = str(month_start.year)
+        summaries = db.get_daily_summaries(
+            start_date=month_start.isoformat(),
+            end_date=month_end.isoformat(),
+            limit=1000,
+        )
+        month_stats = db.get_month_stats(month)
+        stats_data = {
+            "month_total": month_stats["total"],
+            "month_days": month_stats["days_with_counts"],
+            "month_avg": month_stats["avg_count"],
+            "month_peak": month_stats["peak"],
+            "daily_trend": json.dumps(month_stats["daily_trend"]),
+        }
+        view = "month"
+    elif year:
+        # Year view: show months + monthly trend for the year
+        months = db.get_monthly_summaries(year)
+        year_label = year
+        year_stats = db.get_year_stats(year)
+        # Get monthly trend for year
+        monthly_rows = db.conn.execute("""
+            SELECT strftime('%Y-%m',date) as month, SUM(total_count) as count
+            FROM daily_summaries WHERE date LIKE ?
+            GROUP BY month ORDER BY month
+        """, (f"{year}%",)).fetchall()
+        monthly_trend = json.dumps([{"month": r[0], "count": r[1]} for r in monthly_rows])
+        stats_data = {
+            "year_total": year_stats["total"],
+            "monthly_trend": monthly_trend,
+        }
+        view = "year"
+    else:
+        # Top view: show years + yearly stats
+        years = db.get_yearly_summaries()
+        # Get yearly trend
+        yearly_rows = db.conn.execute("""
+            SELECT substr(date,1,4) as year, SUM(total_count) as count
+            FROM daily_summaries GROUP BY year ORDER BY year
+        """).fetchall()
+        yearly_trend = json.dumps([{"year": r[0], "count": r[1]} for r in yearly_rows])
+        stats_data = {
+            "yearly_trend": yearly_trend,
+        }
+        view = "years"
+
     ctx = _ctx(request,
                page="records",
+               view=view,
+               years=years,
+               months=months,
                summaries=summaries,
-               sessions=sessions,
-               page_num=page_num,
-               total_pages=max(1, (total_sessions + per_page - 1) // per_page))
+               year_label=year_label,
+               month_label=month_label,
+               day_label=day_label,
+               quick_stats=quick_stats,
+               **stats_data)
     if _is_htmx(request):
         return templates.TemplateResponse("partials/records.html", ctx)
     ctx["page_content"] = "partials/records.html"
-    return templates.TemplateResponse("base.html", ctx)
-
-
-@app.get("/stats", response_class=HTMLResponse)
-async def stats_page(request: Request):
-    days = int(request.query_params.get("days", "30"))
-    month_value = request.query_params.get("month")
-    ctx = _ctx(
-        request,
-        page="stats",
-        today_count=db.get_today_count(),
-        week_count=db.get_week_count(),
-        month_count=db.get_month_count(),
-        all_time=db.get_all_time_count(),
-        daily_avg=db.get_daily_average(days),
-        peak_day=db.get_peak_day(),
-        daily_trend=json.dumps(db.get_daily_trend(days)),
-        monthly_trend=json.dumps(db.get_monthly_trend()),
-        hourly_dist=json.dumps(db.get_hourly_distribution()),
-        calendar_data=_build_stats_calendar(month_value),
-        goals=db.get_active_goals(),
-        days=days,
-    )
-    if _is_htmx(request):
-        return templates.TemplateResponse("partials/stats.html", ctx)
-    ctx["page_content"] = "partials/stats.html"
     return templates.TemplateResponse("base.html", ctx)
 
 
@@ -584,7 +600,6 @@ async def api_stats(days: int = 30):
 async def api_stats_today():
     return JSONResponse({
         "count": db.get_today_count(),
-        "goal": int(db.get_setting("daily_goal", "0")),
     })
 
 
@@ -622,20 +637,6 @@ async def api_set_language(request: Request):
     response = JSONResponse({"ok": True, "language": lang})
     response.set_cookie("lang", lang, max_age=365 * 24 * 3600)
     return response
-
-
-# ============================================================ API: Goals
-@app.get("/api/goals")
-async def api_goals():
-    return JSONResponse(db.get_active_goals())
-
-
-@app.post("/api/goals")
-async def api_set_goal(request: Request):
-    body = await request.json()
-    db.set_goal(body["type"], body["target"])
-    db.set_setting(f"{body['type']}_goal", str(body["target"]))
-    return JSONResponse({"ok": True})
 
 
 # ============================================================ API: Alerts

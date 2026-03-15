@@ -134,21 +134,6 @@
             <i data-lucide="egg" class="w-6 h-6"></i>
           </div>
         </div>
-        <!-- Goal progress -->
-        <div x-show="dailyGoal > 0" class="mt-3">
-          <div class="flex justify-between text-xs text-primary-100 mb-1">
-            <span x-text="(t.dashboard?.goal||'Hedef')+': '+dailyGoal"></span>
-            <span
-              x-text="Math.min(100, Math.round(todayCount/dailyGoal*100))+'%'"
-            ></span>
-          </div>
-          <div class="w-full bg-white/20 rounded-full h-2">
-            <div
-              class="bg-white rounded-full h-2 transition-all duration-700"
-              :style="'width:'+Math.min(100,todayCount/Math.max(1,dailyGoal)*100)+'%'"
-            ></div>
-          </div>
-        </div>
       </div>
 
       <!-- Active Tracks -->
@@ -282,7 +267,6 @@
   function dashboard() {
     return {
       todayCount: 0,
-      dailyGoal: 0,
       recentEvents: [],
       hourlyChart: null,
       init() {
@@ -325,7 +309,6 @@
           const r = await fetch("/api/stats/today");
           const d = await r.json();
           this.todayCount = d.count || 0;
-          this.dailyGoal = d.goal || 0;
         } catch (e) {}
       },
       initHourlyChart() {

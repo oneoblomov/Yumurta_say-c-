@@ -40,6 +40,80 @@ from egg_counter.counter import CountingLine
 from egg_counter.visualizer import Visualizer
 
 
+class AsyncDatasetRecorder:
+    """Write frames to disk in a background thread to avoid blocking inference."""
+
+    def __init__(self, output_dir: Path,
+                 jpeg_quality: int = 95,
+                 max_queue: int = 16):
+        self.output_dir = Path(output_dir)
+        self.jpeg_quality = max(50, min(int(jpeg_quality), 100))
+        self._queue: queue.Queue = queue.Queue(maxsize=max_queue)
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if not self._running:
+            return
+        self._running = False
+        try:
+            self._queue.put_nowait(None)
+        except queue.Full:
+            pass
+        if self._thread:
+            self._thread.join(timeout=3)
+            self._thread = None
+
+    def enqueue(self, frame: np.ndarray, total_count: int) -> bool:
+        if not self._running:
+            return False
+
+        ts = datetime.now()
+        day_dir = self.output_dir / ts.strftime("%Y-%m-%d")
+        filename = f"egg_{ts.strftime('%H%M%S_%f')}_total_{int(total_count):06d}.jpg"
+        item = (frame.copy(), day_dir / filename)
+
+        try:
+            self._queue.put_nowait(item)
+            return True
+        except queue.Full:
+            # Drop oldest frame to protect the main pipeline under load.
+            try:
+                _ = self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._queue.put_nowait(item)
+                return True
+            except queue.Full:
+                return False
+
+    def _worker(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                break
+
+            frame, path = item
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(
+                    str(path),
+                    frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality],
+                )
+            except Exception:
+                # Recorder failures must not affect counting.
+                pass
+
+
 class PipelineManager:
     """
     Web-uyumlu pipeline yöneticisi.
@@ -105,6 +179,12 @@ class PipelineManager:
         # Stream quality
         self._jpeg_quality = 70
 
+        # Dataset capture for YOLO re-training
+        self._dataset_capture_enabled = False
+        self._dataset_capture_interval_sec = 5.0
+        self._last_dataset_capture_at = 0.0
+        self._dataset_recorder: Optional[AsyncDatasetRecorder] = None
+
         # No-camera placeholder
         self._placeholder_frame = self._create_placeholder()
         self._placeholder_jpeg = self._encode_jpeg(self._placeholder_frame)
@@ -153,6 +233,15 @@ class PipelineManager:
             self._last_session_sync_at = 0.0
             self._consecutive_failures = 0
             self._last_camera_error = None
+            self._last_dataset_capture_at = 0.0
+
+            if self._dataset_capture_enabled:
+                self._dataset_recorder = AsyncDatasetRecorder(
+                    output_dir=ROOT / "dataset" / "raw" / "training_capture",
+                    jpeg_quality=95,
+                    max_queue=16,
+                )
+                self._dataset_recorder.start()
 
             self._thread = threading.Thread(
                 target=self._processing_loop, daemon=True
@@ -376,6 +465,10 @@ class PipelineManager:
         # Stream quality
         self._jpeg_quality = int(s.get("stream_quality", "70"))
         self._placeholder_jpeg = self._encode_jpeg(self._placeholder_frame)
+
+        # Dataset capture toggle (UI settings)
+        v = str(s.get("dataset_capture_enabled", "0")).strip().lower()
+        self._dataset_capture_enabled = v in ("1", "true", "yes")
 
         # Apply overrides
         for k, v in kw.items():
@@ -674,8 +767,20 @@ class PipelineManager:
             enriched, self._track_manager)
         self._total_count = self._counting_line.total_count
 
-        # Update DB session count periodically
+        # Save a raw, annotation-free frame at most once every 5s,
+        # but only after a new egg has been counted.
         now = time.time()
+        if (
+            newly_counted
+            and
+            self._dataset_capture_enabled
+            and self._dataset_recorder is not None
+            and (now - self._last_dataset_capture_at) >= self._dataset_capture_interval_sec
+        ):
+            self._dataset_recorder.enqueue(frame, self._total_count)
+            self._last_dataset_capture_at = now
+
+        # Update DB session count periodically
         if self._session_id and now - self._last_session_sync_at >= 2.0:
             try:
                 self.db.update_session_count(
@@ -743,30 +848,6 @@ class PipelineManager:
         except queue.Full:
             pass
 
-        # Goal check
-        self._check_goals(event.get("total", 0))
-
-    def _check_goals(self, total: int):
-        """Hedef kontrolü."""
-        try:
-            goals = self.db.get_active_goals()
-            for g in goals:
-                if g["type"] == "daily":
-                    today_count = self.db.get_today_count()
-                    if today_count >= g["target_count"]:
-                        self._emit_event("goal_reached", {
-                            "type": "daily",
-                            "target": g["target_count"],
-                            "actual": today_count,
-                        })
-                        self.db.add_alert(
-                            "goal_reached",
-                            f"Günlük hedef tamamlandı! "
-                            f"{today_count}/{g['target_count']}",
-                            "info",
-                        )
-        except Exception:
-            pass
 
     def _emit_event(self, event_type: str, data: Dict):
         ev = {"type": event_type, **data,
@@ -792,6 +873,9 @@ class PipelineManager:
         })
 
     def _cleanup(self):
+        if self._dataset_recorder is not None:
+            self._dataset_recorder.stop()
+            self._dataset_recorder = None
         if self._capture is not None:
             self._capture.release()
             self._capture = None
