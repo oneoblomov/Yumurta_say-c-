@@ -434,17 +434,41 @@ async def settings_page(request: Request):
     available_models = []
     if models_dir.exists():
         for f in sorted(models_dir.rglob("*.pt")):
+            try:
+                size_mb = round(f.stat().st_size / 1024 / 1024, 1)
+            except Exception:
+                size_mb = 0
             available_models.append({
                 "path": str(f.relative_to(ROOT_DIR)),
                 "name": f.name,
                 "type": "pytorch",
+                "size_mb": size_mb,
+            })
+        for f in sorted(models_dir.rglob("*.onnx")):
+            try:
+                size_mb = round(f.stat().st_size / 1024 / 1024, 1)
+            except Exception:
+                size_mb = 0
+            available_models.append({
+                "path": str(f.relative_to(ROOT_DIR)),
+                "name": f.name,
+                "type": "onnx",
+                "size_mb": size_mb,
             })
         for f in sorted(models_dir.rglob("best.xml")):
             d = f.parent
+            try:
+                size_mb = round(
+                    sum(x.stat().st_size for x in d.iterdir() if x.is_file())
+                    / 1024 / 1024, 1
+                )
+            except Exception:
+                size_mb = 0
             available_models.append({
                 "path": str(d.relative_to(ROOT_DIR)),
                 "name": d.name,
                 "type": "openvino",
+                "size_mb": size_mb,
             })
 
     ctx = _ctx(
@@ -934,6 +958,18 @@ async def api_list_models():
                 "path": str(f.relative_to(ROOT_DIR)),
                 "name": f.name,
                 "type": "pytorch",
+                "size_mb": size_mb,
+            })
+        # ONNX models (.onnx)
+        for f in sorted(models_dir.rglob("*.onnx")):
+            try:
+                size_mb = round(f.stat().st_size / 1024 / 1024, 1)
+            except Exception:
+                size_mb = 0
+            result.append({
+                "path": str(f.relative_to(ROOT_DIR)),
+                "name": f.name,
+                "type": "onnx",
                 "size_mb": size_mb,
             })
         # OpenVINO model directories (contain best.xml)
