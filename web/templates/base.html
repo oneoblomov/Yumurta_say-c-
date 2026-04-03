@@ -62,7 +62,7 @@
           <span class="text-lg font-bold text-primary-600">🥚</span>
           <span class="font-semibold text-sm" x-text="t.app_title || 'Yumurta Sayıcı'"></span>
         </div>
-        <button @click="$refs.alertPanel.classList.toggle('hidden')"
+        <button @click="showAlerts = !showAlerts"
                 class="relative p-2 rounded-lg hover:bg-gray-100">
           <i data-lucide="bell" class="w-5 h-5"></i>
           <span x-show="alertCount>0"
@@ -84,14 +84,13 @@
 
       <!-- Brand -->
       <div class="flex items-center gap-3 px-4 h-16 border-b border-slate-700 overflow-hidden">
-        <span class="text-2xl shrink-0">🥚</span>
         <div :class="sidebarCollapsed ? 'lg:hidden' : ''" class="min-w-0">
           <h1 class="font-bold text-sm leading-tight truncate" x-text="t.app_title || 'Yumurta Sayıcı'"></h1>
           <p class="text-[10px] text-slate-400">Azim Tav v1.0</p>
         </div>
-        <!-- Desktop collapse toggle -->
+        <!-- Desktop collapse toggle -> include egg icon when collapsed -->
         <button @click="toggleSidebarCollapsed(); $nextTick(() => lucide.createIcons());"
-                class="flex ml-auto shrink-0 p-1.5 rounded-lg hover:bg-slate-700 transition-colors"
+                class="flex ml-auto shrink-0 items-center gap-2 p-1.5 rounded-lg hover:bg-slate-700 transition-colors"
                 :title="sidebarCollapsed ? (t.common?.expand||'Genişlet') : (t.common?.collapse||'Küçült')">
           <i :data-lucide="sidebarCollapsed ? 'panel-left-open' : 'panel-left-close'" class="w-4 h-4 text-slate-400"></i>
         </button>
@@ -120,15 +119,57 @@
         </template>
       </nav>
 
-      <!-- Sidebar Footer: pipeline status only -->
-      <div class="px-3 py-3 border-t border-slate-700 overflow-hidden">
-        <div class="flex items-center gap-2">
-          <span :class="status.running ? (status.paused ? 'bg-yellow-400' : 'bg-green-400 animate-pulse') : 'bg-gray-500'"
-                class="w-2.5 h-2.5 rounded-full shrink-0"></span>
-          <span :class="sidebarCollapsed ? 'lg:hidden' : ''"
-                class="text-xs text-slate-400 truncate"
-                x-text="status.running ? (status.paused ? (t.status?.paused||'Duraklatıldı') : (t.status?.running||'Çalışıyor')) : (t.status?.stopped||'Durduruldu')"></span>
+        <!-- System Metrics -->
+        <div x-show="!sidebarCollapsed" x-transition class="px-3 pb-3 overflow-hidden" x-cloak>
+          <div class="rounded-2xl border border-slate-700 bg-slate-900/70 p-3 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wide text-slate-200" x-text="t.metrics?.title || 'Sistem'"></span>
+              <span class="text-[10px] text-slate-400" x-text="systemMetrics.updated_at ? systemMetrics.updated_at : '-'"></span>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                <span x-text="t.metrics?.temperature || 'Sıcaklık'"></span>
+                <span x-text="formatTemperature(systemMetrics.cpu_temperature_c)"></span>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <template x-for="metric in [
+                { key: 'cpu_usage', label: t.metrics?.cpu || 'CPU' },
+                { key: 'memory_usage', label: t.metrics?.memory || 'RAM' },
+                { key: 'disk_usage', label: t.metrics?.disk || 'Disk' }
+              ]" :key="metric.key">
+                <div>
+                  <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                    <span x-text="metric.label"></span>
+                    <span x-text="formatPercent(systemMetrics[metric.key])"></span>
+                  </div>
+                  <div class="h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500"
+                         :style="`width: ${Math.max(0, Math.min(100, Number(systemMetrics[metric.key]) || 0))}%; background-color: ${metricColor(systemMetrics[metric.key])};`"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
+
+      <!-- Sidebar Footer -->
+      <div class="px-3 py-3 border-t border-slate-700 overflow-hidden space-y-2">
+        <button @click="toggleLocalMonitor()"
+            :disabled="status.local_monitor_available === false"
+            :title="status.local_monitor_enabled ? 'Yerel monitörü kapat' : 'Yerel monitörü aç'"
+          :class="status.local_monitor_enabled ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-100'"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <i data-lucide="monitor" class="w-4 h-4 shrink-0"></i>
+          <span :class="sidebarCollapsed ? 'lg:hidden' : ''" class="text-sm font-medium truncate"
+            x-text="status.local_monitor_enabled ? 'Yerel ekran kapat' : 'Yerel ekran aç'"></span>
+        </button>
+        <p :class="sidebarCollapsed ? 'lg:hidden' : ''" class="text-[10px] leading-snug text-amber-300"
+           x-show="status.local_monitor_available === false"
+           x-text="status.local_monitor_error || 'Grafik oturumu gerekli'">
+        </p>
       </div>
     </aside>
 
@@ -189,7 +230,7 @@
         <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
           <span class="font-semibold text-sm" x-text="t.alerts?.title || 'Bildirimler'"></span>
           <button @click="ackAllAlerts()" class="text-xs text-primary-600 hover:underline"
-                  x-text="t.alerts?.ack_all || 'Tümünü okundu yap'"></button>
+                  x-text="t.alerts?.ack_all || 'Tümü okundu'"></button>
         </div>
         <div class="overflow-y-auto max-h-72 divide-y divide-gray-100">
           <template x-for="a in alerts" :key="a.id">

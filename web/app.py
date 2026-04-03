@@ -11,7 +11,9 @@ import json
 import asyncio
 import subprocess
 import os
+import shutil
 import socket
+import time
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -90,6 +92,7 @@ def _maybe_emit_schedule_alert(action: str, message: str) -> None:
 def _status_payload() -> Dict[str, object]:
     status = pipeline.get_status()
     status["schedule_runtime"] = dict(schedule_runtime_state)
+    status["system_metrics"] = _collect_system_metrics()
     return status
 
 
@@ -206,6 +209,10 @@ async def shutdown_event():
         except asyncio.CancelledError:
             pass
         schedule_controller_task = None
+    try:
+        pipeline.shutdown_local_monitor()
+    except Exception:
+        pass
     print("[SHUTDOWN] Pipeline durduruluyor...")
     if pipeline.get_status().get("running"):
         pipeline.stop()
@@ -282,6 +289,81 @@ def _ctx(request: Request, **extra) -> dict:
     # lazy evaluate cloudflared URL; if syslog not available this is None
     ctx["cloudflare_url"] = get_cloudflared_url()
     return ctx
+
+
+def _read_cpu_usage_percent() -> float:
+    def _sample() -> tuple[int, int]:
+        with open("/proc/stat", "r", encoding="utf-8") as handle:
+            fields = handle.readline().split()[1:]
+        values = [int(value) for value in fields]
+        idle = values[3] + (values[4] if len(values) > 4 else 0)
+        total = sum(values)
+        return total, idle
+
+    try:
+        total1, idle1 = _sample()
+        time.sleep(0.08)
+        total2, idle2 = _sample()
+        total_delta = total2 - total1
+        idle_delta = idle2 - idle1
+        if total_delta <= 0:
+            return 0.0
+        return round(max(0.0, min(100.0, (1.0 - idle_delta / total_delta) * 100.0)), 1)
+    except Exception:
+        return 0.0
+
+
+def _read_memory_usage_percent() -> float:
+    try:
+        data = {}
+        with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            for line in handle:
+                key, value = line.split(":", 1)
+                data[key] = int(value.strip().split()[0])
+        total = data.get("MemTotal", 0)
+        available = data.get("MemAvailable", 0)
+        if not total:
+            return 0.0
+        return round(max(0.0, min(100.0, (1.0 - available / total) * 100.0)), 1)
+    except Exception:
+        return 0.0
+
+
+def _read_disk_usage_percent() -> float:
+    try:
+        return round(shutil.disk_usage(ROOT_DIR).used / shutil.disk_usage(ROOT_DIR).total * 100.0, 1)
+    except Exception:
+        return 0.0
+
+
+def _read_thermal_sensors() -> List[Dict[str, object]]:
+    sensors: List[Dict[str, object]] = []
+    thermal_root = Path("/sys/class/thermal")
+    if not thermal_root.exists():
+        return sensors
+    for zone in sorted(thermal_root.glob("thermal_zone*")):
+        try:
+            label = (zone / "type").read_text(encoding="utf-8").strip() or zone.name
+            temp_raw = (zone / "temp").read_text(encoding="utf-8").strip()
+            temp_c = round(int(temp_raw) / 1000.0, 1)
+            sensors.append({"name": label, "temperature_c": temp_c})
+        except Exception:
+            continue
+    sensors.sort(key=lambda item: item["temperature_c"], reverse=True)
+    return sensors[:6]
+
+
+def _collect_system_metrics() -> Dict[str, object]:
+    sensors = _read_thermal_sensors()
+    primary_temp = sensors[0]["temperature_c"] if sensors else None
+    return {
+        "cpu_usage": _read_cpu_usage_percent(),
+        "memory_usage": _read_memory_usage_percent(),
+        "disk_usage": _read_disk_usage_percent(),
+        "cpu_temperature_c": primary_temp,
+        "temperatures": sensors,
+        "updated_at": datetime.now().strftime("%H:%M:%S"),
+    }
 
 
 def _is_htmx(request: Request) -> bool:
@@ -545,6 +627,16 @@ async def api_reset():
 async def api_debug():
     v = pipeline.toggle_debug()
     return JSONResponse({"ok": True, "debug": v})
+
+
+@app.get("/api/pipeline/local-monitor/status")
+async def api_local_monitor_status():
+    return JSONResponse(pipeline.get_local_monitor_status())
+
+
+@app.post("/api/pipeline/local-monitor/toggle")
+async def api_local_monitor_toggle():
+    return JSONResponse(pipeline.toggle_local_monitor())
 
 
 @app.get("/api/pipeline/status")
@@ -821,6 +913,30 @@ async def import_csv(file: UploadFile = File(...)):
         })
     count = db.import_count_events(events)
     return JSONResponse({"ok": True, "imported": count})
+
+
+@app.post("/api/import/day-total")
+async def import_day_total(request: Request):
+    body = await request.json()
+    date_str = (body.get("date") or "").strip()
+    total_count = body.get("total_count")
+    if not date_str:
+        return JSONResponse({"ok": False, "error": "Tarih gerekli"}, status_code=400)
+    try:
+        total_count_int = int(total_count)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "Geçerli bir sayı girin"}, status_code=400)
+    if total_count_int < 0:
+        return JSONResponse({"ok": False, "error": "Sayı negatif olamaz"}, status_code=400)
+
+    db.set_daily_count(date_str, total_count_int)
+    return JSONResponse({"ok": True, "date": date_str, "total_count": total_count_int})
+
+
+@app.get("/api/system/metrics")
+async def api_system_metrics():
+    metrics = await asyncio.to_thread(_collect_system_metrics)
+    return JSONResponse(metrics)
 
 
 # ============================================================ WebSocket

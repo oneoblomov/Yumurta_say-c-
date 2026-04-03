@@ -195,7 +195,8 @@ class Database:
             # Display
             ("language", "tr", "display", "Arayüz dili"),
             ("theme", "light", "display", "Tema"),
-            ("stream_quality", "70", "display", "Video akış kalitesi"),
+            ("stream_quality", "50", "display", "Video akış JPEG kalitesi (1-100)"),
+            ("stream_fps_limit", "10", "display", "Video akış FPS sınırı (max 30)"),
             # Update
             ("update_repo_owner", "oneoblomov", "update", "GitHub sahip hesabı"),
             ("update_repo_name", "Yumurta_say-c-", "update", "GitHub depo adı"),
@@ -407,6 +408,22 @@ class Database:
         self.conn.execute(
             "UPDATE daily_summaries SET total_count=0 WHERE date=?",
             (date_str,),
+        )
+        self.conn.commit()
+
+    def set_daily_count(self, date_str: str, total_count: int,
+                        notes: str = None):
+        """Create or overwrite a daily summary with a fixed total."""
+        self.conn.execute(
+            """
+            INSERT INTO daily_summaries
+                (date,total_count,session_count,first_count_at,last_count_at,notes)
+            VALUES (?, ?, 1, NULL, NULL, ?)
+            ON CONFLICT(date) DO UPDATE SET
+                total_count=excluded.total_count,
+                notes=COALESCE(excluded.notes, daily_summaries.notes)
+            """,
+            (date_str, int(total_count), notes),
         )
         self.conn.commit()
 

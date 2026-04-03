@@ -48,7 +48,9 @@
         "status": "Durum",
         "events_for": "Sayım olayları:",
         "empty": "Kayıt bulunamadı",
-        "import": "İçe Aktar"
+        "import": "İçe Aktar",
+        "manual_import": "Günlük Sayı İçe Aktar",
+        "manual_import_hint": "Bir gün seçin ve o güne ait toplam sayıyı girin."
     },
     "stats": {
         "title": "İstatistikler",
@@ -158,8 +160,15 @@
     },
     "alerts": {
         "title": "Bildirimler",
-        "ack_all": "Tümünü okundu yap",
+        "ack_all": "Tümü okundu",
         "empty": "Bildirim yok"
+    },
+    "metrics": {
+        "title": "Sistem",
+        "temperature": "Sıcaklık",
+        "cpu": "CPU",
+        "memory": "RAM",
+        "disk": "Disk"
     },
     "common": {
         "actions": "İşlem",

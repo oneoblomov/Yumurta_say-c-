@@ -49,6 +49,25 @@ class DummyCountingLine:
         self.total_count = 0
 
 
+class DummyLocalMonitor:
+    def __init__(self):
+        self.enabled = False
+        self.is_running = False
+        self.available = True
+        self.last_error = None
+
+    def toggle(self):
+        self.enabled = not self.enabled
+        self.is_running = self.enabled
+        return {
+            "ok": True,
+            "enabled": self.enabled,
+            "running": self.is_running,
+            "available": self.available,
+            "last_error": self.last_error,
+        }
+
+
 class PipelineManagerResetTest(unittest.TestCase):
     def setUp(self):
         self.db = DummyDB()
@@ -60,6 +79,7 @@ class PipelineManagerResetTest(unittest.TestCase):
         self.pm._counting_line = DummyCountingLine()
         self.pm._track_manager = DummyTrackManager()
         self.pm._detector = DummyDetector()
+        self.pm._local_monitor = DummyLocalMonitor()
         self.pm._total_count = 5
 
     def test_reset_only_count(self):
@@ -115,6 +135,16 @@ class PipelineManagerScheduleTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("08:00-16:00", result["error"])
         self.assertFalse(self.db.session_created)
+
+    def test_local_monitor_state_is_exposed(self):
+        status = self.pm.get_status()
+        self.assertIn("local_monitor_enabled", status)
+        self.assertFalse(status["local_monitor_enabled"])
+
+        result = self.pm.toggle_local_monitor()
+        self.assertTrue(result["ok"])
+        self.assertTrue(self.pm.get_status()["local_monitor_enabled"])
+        self.assertTrue(self.pm.get_status()["local_monitor_running"])
 
 
 if __name__ == "__main__":

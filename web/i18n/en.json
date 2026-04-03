@@ -48,7 +48,9 @@
         "status": "Status",
         "events_for": "Count events for:",
         "empty": "No records found",
-        "import": "Import"
+           "import": "Import",
+           "manual_import": "Import Daily Count",
+           "manual_import_hint": "Choose a day and enter the total count for that day."
     },
     "stats": {
         "title": "Statistics",
@@ -161,6 +163,13 @@
         "ack_all": "Mark all as read",
         "empty": "No notifications"
     },
+       "metrics": {
+           "title": "System",
+           "temperature": "Temperature",
+           "cpu": "CPU",
+           "memory": "RAM",
+           "disk": "Disk"
+       },
     "common": {
         "actions": "Actions",
         "items": "items",

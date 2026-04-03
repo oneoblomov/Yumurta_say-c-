@@ -81,7 +81,22 @@ function app() {
             frame_count: 0,
             session_id: null,
             resolution: 'N/A',
+            local_monitor_enabled: false,
+            local_monitor_running: false,
+            local_monitor_available: null,
+            local_monitor_error: null,
         },
+
+        // System metrics (polled infrequently)
+        systemMetrics: {
+            cpu_usage: null,
+            memory_usage: null,
+            disk_usage: null,
+            cpu_temperature_c: null,
+            temperatures: [],
+            updated_at: null,
+        },
+        systemMetricsTimer: null,
 
         // Alerts
         showAlerts: false,
@@ -116,6 +131,11 @@ function app() {
 
             // Load initial alerts
             this.fetchAlerts();
+
+            // Load low-frequency system metrics for the sidebar
+            this.refreshSystemMetrics();
+            // 40 saniyede bir güncelleme (WebSocket 0.5s stream'i, sistem metrikleri için kullanmıyoruz)
+            this.systemMetricsTimer = setInterval(() => this.refreshSystemMetrics(), 40000);
 
             // Periodic alert refresh
             setInterval(() => this.fetchAlertCount(), 10000);
@@ -155,6 +175,27 @@ function app() {
             }
         },
 
+        formatPercent(value) {
+            return Number.isFinite(Number(value)) ? `${Math.round(Number(value))}%` : '-';
+        },
+
+        formatTemperature(value) {
+            return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}°C` : '-';
+        },
+
+        metricColor(value) {
+            const usage = Math.max(0, Math.min(100, Number(value) || 0));
+            const hue = 120 - usage * 1.2; // 0 -> red, 50 -> yellow, 100 -> green
+            return `hsl(${hue}, 85%, 50%)`;
+        },
+
+        async refreshSystemMetrics() {
+            try {
+                const r = await fetch('/api/system/metrics', { cache: 'no-store' });
+                this.systemMetrics = await r.json();
+            } catch (e) { }
+        },
+
         // ---------------------------------------- WebSocket
         connectWS() {
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -168,7 +209,10 @@ function app() {
                         const data = JSON.parse(event.data);
 
                         if (data.status) {
-                            this.status = { ...this.status, ...data.status };
+                            const { system_metrics, ...statusWithoutMetrics } = data.status;
+                            this.status = { ...this.status, ...statusWithoutMetrics };
+                            // systemMetrics must be updated by the dedicated interval via /api/system/metrics
+                            // and should not be overwritten by websocket 0.5s stream.
                         }
 
                         if (data.events && data.events.length > 0) {
@@ -236,6 +280,39 @@ function app() {
         async ackAllAlerts() {
             await fetch('/api/alerts/ack-all', { method: 'POST' });
             this.fetchAlerts();
+        },
+
+        async toggleLocalMonitor() {
+            try {
+                const r = await fetch('/api/pipeline/local-monitor/toggle', { method: 'POST' });
+                const d = await r.json();
+                if (!d.ok) {
+                    this.status = {
+                        ...this.status,
+                        local_monitor_enabled: !!d.enabled,
+                        local_monitor_running: !!d.running,
+                        local_monitor_available: d.available !== undefined ? d.available : this.status.local_monitor_available,
+                        local_monitor_error: d.error || d.last_error || null,
+                    };
+                    showToast(d.error || 'Yerel ekran acilamadi', 'error');
+                    return;
+                }
+
+                this.status = {
+                    ...this.status,
+                    local_monitor_enabled: !!d.enabled,
+                    local_monitor_running: !!d.running,
+                    local_monitor_available: d.available !== undefined ? d.available : this.status.local_monitor_available,
+                    local_monitor_error: d.last_error ?? null,
+                };
+
+                showToast(
+                    d.enabled ? 'Yerel ekran acildi' : 'Yerel ekran kapatildi',
+                    'success'
+                );
+            } catch (e) {
+                showToast('Yerel ekran istegi basarisiz', 'error');
+            }
         }
     };
 }

@@ -27,16 +27,17 @@
         <a href="/api/export/excel" class="px-3 py-1.5 text-xs font-medium rounded-md hover:bg-gray-50 text-gray-600 transition-colors">Excel</a>
         <a href="/api/export/pdf" class="px-3 py-1.5 text-xs font-medium rounded-md hover:bg-gray-50 text-gray-600 transition-colors">PDF</a>
       </div>
-      <label class="px-3 py-2 bg-primary-50 text-primary-600 text-xs font-medium rounded-lg cursor-pointer hover:bg-primary-100 transition-colors border border-primary-200">
+      <button class="px-3 py-2 bg-primary-50 text-primary-600 text-xs font-medium rounded-lg cursor-pointer hover:bg-primary-100 transition-colors border border-primary-200"
+              @click="openManualImport()">
         <i data-lucide="upload" class="w-3.5 h-3.5 inline mr-1"></i>
         <span x-text="t.records?.import || 'İçe Aktar'"></span>
-        <input type="file" accept=".csv" class="hidden" @change="importCSV($event)"/>
-      </label>
+      </button>
       {% endif %}
     </div>
   </div>
 
   <!-- Quick Stats (visible in all views) -->
+  {% if view == 'years' %}
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
       <p class="text-xs text-gray-500 font-medium" x-text="t.stats?.today || 'Bugün'"></p>
@@ -55,6 +56,7 @@
       <p class="text-2xl font-bold text-purple-700">{{ quick_stats.all_time }}</p>
     </div>
   </div>
+  {% endif %}
 
   <!-- Years View (Trend + Table) -->
   {% if view == 'years' %}
@@ -143,24 +145,6 @@
   <!-- Month View (Trend + Table) -->
   {% elif view == 'month' %}
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-      <div class="bg-gradient-to-br from-primary-50 to-blue-50 rounded-lg p-4">
-        <p class="text-xs text-primary-600 font-medium">Ay Toplam</p>
-        <p class="text-3xl font-bold text-primary-700 mt-1">{{ month_total }}</p>
-      </div>
-      <div class="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4">
-        <p class="text-xs text-green-600 font-medium">Gün Sayısı</p>
-        <p class="text-3xl font-bold text-green-700 mt-1">{{ month_days }}</p>
-      </div>
-      <div class="bg-gradient-to-br from-orange-50 to-amber-50 rounded-lg p-4">
-        <p class="text-xs text-orange-600 font-medium">Ortalama</p>
-        <p class="text-3xl font-bold text-orange-700 mt-1">{{ month_avg }}</p>
-      </div>
-      <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-4">
-        <p class="text-xs text-purple-600 font-medium">En Yüksek</p>
-        <p class="text-3xl font-bold text-purple-700 mt-1">{{ month_peak }}</p>
-      </div>
-    </div>
     <h3 class="font-semibold text-sm text-gray-700 mb-4" x-text="t.stats?.daily_trend || 'Günlük Trend'"></h3>
     <div class="h-64"><canvas id="dailyTrendChart"></canvas></div>
   </div>
@@ -194,9 +178,6 @@
                 <a href="/records?year={{ year_label }}&month={{ month_label }}&day={{ s.date }}" class="p-1.5 rounded-lg hover:bg-green-50 text-green-500 transition-colors" title="İstatistikler">
                   <i data-lucide="chart-bar" class="w-4 h-4"></i>
                 </a>
-                <button @click="resetDay('{{ s.date }}')" class="p-1.5 rounded-lg hover:bg-yellow-50 text-yellow-500 transition-colors" title="Sıfırla">
-                  <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-                </button>
                 <button @click="deleteDay('{{ s.date }}')" class="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Sil">
                   <i data-lucide="trash-2" class="w-4 h-4"></i>
                 </button>
@@ -224,6 +205,34 @@
     </div>
   </div>
   {% endif %}
+
+  <!-- Manual Import Modal -->
+  <div x-show="manualImportOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4" x-transition x-cloak>
+    <div class="fixed inset-0 bg-black/40" @click="manualImportOpen=false"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-bold text-gray-800" x-text="t.records?.manual_import || 'Günlük Sayı İçe Aktar'"></h3>
+        <p class="text-xs text-gray-500 mt-1" x-text="t.records?.manual_import_hint || 'Bir gün seçin ve o güne ait toplam sayıyı girin.'"></p>
+      </div>
+      <div class="p-6 space-y-4">
+        <label class="block">
+          <span class="text-xs font-medium text-gray-600 mb-1 block" x-text="t.records?.date || 'Tarih'"></span>
+          <input type="date" x-model="manualImportDate" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary-400 focus:ring-0" />
+        </label>
+        <label class="block">
+          <span class="text-xs font-medium text-gray-600 mb-1 block" x-text="t.records?.count || 'Sayım'"></span>
+          <input type="number" min="0" step="1" x-model="manualImportValue" class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary-400 focus:ring-0" />
+        </label>
+      </div>
+      <div class="flex items-center justify-end gap-2 px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <button class="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100" @click="manualImportOpen=false" x-text="t.common?.cancel || 'İptal'"></button>
+        <button class="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-60" @click="submitManualImport()" :disabled="manualImportSubmitting">
+          <span x-show="!manualImportSubmitting" x-text="t.records?.import || 'İçe Aktar'"></span>
+          <span x-show="manualImportSubmitting" x-text="t.common?.loading || 'Yükleniyor...'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Event Detail Modal -->
   <div x-show="showEventModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" x-transition @keydown.escape.window="showEventModal=false">
@@ -267,10 +276,20 @@
       selectedDate: "",
       showEventModal: false,
       modalEvents: [],
+      manualImportOpen: false,
+      manualImportDate: "{{ day_label or '' }}".slice(0, 10),
+      manualImportValue: "",
+      manualImportSubmitting: false,
       yearlyTrendChart: null,
       monthlyTrendChart: null,
       dailyTrendChart: null,
       hourlyChart: null,
+
+      openManualImport() {
+        this.manualImportDate = this.manualImportDate || new Date().toISOString().slice(0, 10);
+        this.manualImportValue = this.manualImportValue || "";
+        this.manualImportOpen = true;
+      },
 
       async viewEvents(dateStr) {
         const r = await fetch("/api/events?date_str=" + dateStr + "&limit=500");
@@ -287,17 +306,35 @@
         await fetch("/api/daily/" + dateStr, { method: "DELETE" });
         location.reload();
       },
-      async importCSV(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const fd = new FormData();
-        fd.append("file", file);
-        const r = await fetch("/api/import/csv", { method: "POST", body: fd });
-        const d = await r.json();
-        if (d.ok) {
-          showToast(d.imported + " kayıt içe aktarıldı", "success");
-          location.reload();
-        } else showToast("İçe aktarma hatası", "error");
+      async submitManualImport() {
+        const dateValue = (this.manualImportDate || "").trim();
+        const totalValue = Number(this.manualImportValue);
+        if (!dateValue) {
+          showToast("Tarih seçin", "warning");
+          return;
+        }
+        if (!Number.isFinite(totalValue) || totalValue < 0) {
+          showToast("Geçerli bir sayı girin", "warning");
+          return;
+        }
+        this.manualImportSubmitting = true;
+        try {
+          const r = await fetch("/api/import/day-total", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ date: dateValue, total_count: Math.trunc(totalValue) }),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            showToast(`${d.date} günü için ${d.total_count} kaydı işlendi`, "success");
+            this.manualImportOpen = false;
+            location.reload();
+          } else {
+            showToast(d.error || "İçe aktarma hatası", "error");
+          }
+        } finally {
+          this.manualImportSubmitting = false;
+        }
       },
 
       initCharts() {
